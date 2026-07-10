@@ -114,9 +114,9 @@
     background-size: var(--canvas-grid-size) var(--canvas-grid-size);
   }
 
-  /* Apple-style glass — for floating toolbars/menus over the busy canvas only. */
+  /* Apple-style glass — theme-aware (see --glass-bg). Floating bars / menus. */
   .glass {
-    background: rgba(20, 20, 24, 0.55);
+    background: var(--glass-bg);
     backdrop-filter: blur(24px) saturate(1.3);
     -webkit-backdrop-filter: blur(24px) saturate(1.3);
     border: 1px solid var(--border-strong);
@@ -135,6 +135,81 @@
     opacity: 0.035;
     mix-blend-mode: overlay;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* ── Overlays (global: dialogs, drawers) ─────────────────────────────── */
+  /* Glass dim backdrop applied to the CDK overlay backdrop element. */
+  .tsai-overlay-backdrop {
+    background: rgba(6, 6, 7, 0.5);
+    backdrop-filter: blur(6px) saturate(1.1);
+    -webkit-backdrop-filter: blur(6px) saturate(1.1);
+    animation: tsai-overlay-fade var(--dur-fast) var(--ease-out);
+  }
+  .light .tsai-overlay-backdrop {
+    background: rgba(17, 17, 19, 0.25);
+  }
+
+  /* Enter transition for a centered dialog panel. */
+  .tsai-dialog-enter {
+    animation: tsai-dialog-pop var(--dur-mid) var(--ease-out);
+  }
+
+  /* Loading skeleton shimmer. */
+  .tsai-skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--surface-2) 25%,
+      var(--surface-3) 37%,
+      var(--surface-2) 63%
+    );
+    background-size: 400% 100%;
+    animation: tsai-shimmer 1.4s ease infinite;
+  }
+
+  /* Drawer slide-in per side. */
+  .tsai-drawer-right {
+    animation: tsai-slide-left var(--dur-mid) var(--ease-out);
+  }
+  .tsai-drawer-left {
+    animation: tsai-slide-right var(--dur-mid) var(--ease-out);
+  }
+  .tsai-drawer-bottom {
+    animation: tsai-slide-up var(--dur-mid) var(--ease-out);
+  }
+}
+
+@keyframes tsai-overlay-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes tsai-dialog-pop {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+@keyframes tsai-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+@keyframes tsai-slide-left {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes tsai-slide-right {
+  from {
+    transform: translateX(-100%);
+  }
+}
+@keyframes tsai-slide-up {
+  from {
+    transform: translateY(100%);
   }
 }
 

@@ -4,6 +4,7 @@ import {
   input,
   model,
 } from '@angular/core';
+import type { FormValueControl } from '@angular/forms/signals';
 
 export interface RadioOption {
   value: string;
@@ -35,7 +36,7 @@ export interface RadioOption {
     }
   </div>`,
 })
-export class RadioGroup {
+export class RadioGroup implements FormValueControl<string | undefined> {
   readonly options = input<RadioOption[]>([]);
   readonly name = input('tsai-radio');
   readonly value = model<string>();

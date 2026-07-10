@@ -4,6 +4,7 @@ import {
   input,
   model,
 } from '@angular/core';
+import type { FormCheckboxControl } from '@angular/forms/signals';
 
 /** `tsai-checkbox` — native checkbox with a projected label. */
 @Component({
@@ -23,7 +24,7 @@ import {
     <ng-content />
   </label>`,
 })
-export class Checkbox {
+export class Checkbox implements FormCheckboxControl {
   readonly checked = model(false);
   readonly disabled = input(false);
 }

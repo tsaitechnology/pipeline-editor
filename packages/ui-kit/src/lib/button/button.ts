@@ -4,12 +4,13 @@ import {
   computed,
   input,
 } from '@angular/core';
+import { Spinner } from '../spinner/spinner';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 export type ButtonSize = 'sm' | 'md';
 
 const BASE =
-  'inline-flex items-center justify-center gap-2 rounded-sm font-medium select-none transition-colors focus-visible:outline-none disabled:opacity-50 disabled:pointer-events-none';
+  'relative inline-flex items-center justify-center gap-2 rounded-sm font-medium select-none transition-colors focus-visible:outline-none disabled:opacity-50 disabled:pointer-events-none';
 
 const SIZES: Record<ButtonSize, string> = {
   sm: 'h-8 px-3 text-sm',
@@ -27,18 +28,45 @@ const VARIANTS: Record<ButtonVariant, string> = {
 /**
  * `tsai-button` — the ui-kit's baseline action control.
  *
- * A thin, fully-styled wrapper over a native `<button>` (already accessible),
- * driven entirely by the design tokens in `@tsai-pe/shared/theme`.
+ * A thin, fully-styled wrapper over a native `<button>` (already accessible).
+ * Projects optional leading / trailing icons via the `[icon-left]` / `[icon-right]`
+ * slots — the slot wrappers collapse (`empty:hidden`) when unused, so the flex
+ * `gap` only appears when an icon is present. When `loading` is set the button
+ * dims, blocks interaction and shows a centered spinner over the hidden label.
  */
 @Component({
   selector: 'tsai-button',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Spinner],
   template: `<button
     [type]="type()"
-    [disabled]="disabled()"
+    [disabled]="disabled() || loading()"
+    [attr.aria-busy]="loading() || null"
     [class]="classes()"
   >
-    <ng-content />
+    <span
+      class="inline-flex shrink-0 empty:hidden"
+      [class.invisible]="loading()"
+    >
+      <ng-content select="[icon-left]" />
+    </span>
+    <span
+      class="inline-flex items-center empty:hidden"
+      [class.invisible]="loading()"
+    >
+      <ng-content />
+    </span>
+    <span
+      class="inline-flex shrink-0 empty:hidden"
+      [class.invisible]="loading()"
+    >
+      <ng-content select="[icon-right]" />
+    </span>
+    @if (loading()) {
+      <span class="absolute inset-0 grid place-items-center">
+        <tsai-spinner size="sm" />
+      </span>
+    }
   </button>`,
   host: {
     '[attr.data-variant]': 'variant()',
@@ -53,6 +81,8 @@ export class Button {
   readonly type = input<'button' | 'submit' | 'reset'>('button');
   /** Disable interaction and dim the control. */
   readonly disabled = input(false);
+  /** Show a spinner and block interaction while an action is in flight. */
+  readonly loading = input(false);
 
   protected readonly classes = computed(
     () => `${BASE} ${SIZES[this.size()]} ${VARIANTS[this.variant()]}`,

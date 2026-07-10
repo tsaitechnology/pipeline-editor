@@ -4,6 +4,7 @@ import {
   input,
   model,
 } from '@angular/core';
+import type { FormCheckboxControl } from '@angular/forms/signals';
 
 /** `tsai-switch` — an accessible on/off toggle (`role="switch"`). */
 @Component({
@@ -26,7 +27,7 @@ import {
     ></span>
   </button>`,
 })
-export class Switch {
+export class Switch implements FormCheckboxControl {
   readonly checked = model(false);
   readonly disabled = input(false);
 }

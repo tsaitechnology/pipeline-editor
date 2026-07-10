@@ -5,5 +5,8 @@
    tsconfig paths) can find the stylesheet. */
 @import '../../../packages/shared/theme/src/index.css';
 
+/* CDK Overlay structural styles (dropdowns, popovers, future modals/drawers). */
+@import '@angular/cdk/overlay-prebuilt.css';
+
 /* Tailwind v4 monorepo scanning: point at the app + showcased libraries. */
 @source '../../../packages/ui-kit';

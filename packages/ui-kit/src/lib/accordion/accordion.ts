@@ -37,32 +37,37 @@ import { AccordionItem } from './accordion-item';
   template: `<div
     ngAccordionGroup
     [multiExpandable]="multi()"
-    class="flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-surface-1"
+    class="flex flex-col rounded-md border border-border bg-surface-1"
   >
     @for (item of items(); track $index) {
-      <div>
+      <div class="border-b border-border last:border-b-0">
         <h3 class="m-0">
           <button
             ngAccordionTrigger
             [panel]="panel"
             [disabled]="item.disabled()"
-            class="group flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium text-text transition-colors hover:bg-surface-2 focus-visible:outline-none disabled:opacity-50"
+            class="group flex w-full items-center justify-between gap-3 rounded-md px-4 py-3 text-left text-sm font-medium text-text transition-colors hover:bg-surface-2 focus-visible:outline-none disabled:opacity-50"
           >
-            {{ item.label() }}
-            <span
-              class="text-text-3 transition-transform group-aria-expanded:rotate-180"
+            <span>{{ item.label() }}</span>
+            <svg
+              class="size-4 shrink-0 text-text-3 transition-transform duration-200 group-aria-expanded:rotate-180"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
               aria-hidden="true"
-              >⌄</span
             >
+              <path d="m6 9 6 6 6-6" />
+            </svg>
           </button>
         </h3>
-        <div
-          ngAccordionPanel
-          #panel="ngAccordionPanel"
-          class="px-4 pb-3 text-sm text-text-2"
-        >
+        <div ngAccordionPanel #panel="ngAccordionPanel">
           <ng-template ngAccordionContent>
-            <ng-container [ngTemplateOutlet]="item.content()" />
+            <div class="px-4 pb-3 text-sm text-text-2">
+              <ng-container [ngTemplateOutlet]="item.content()" />
+            </div>
           </ng-template>
         </div>
       </div>

@@ -1,181 +1,624 @@
-<main class="min-h-screen px-6 py-10">
-  <div class="mx-auto flex max-w-5xl flex-col gap-8">
-    <header class="flex flex-wrap items-end justify-between gap-4">
-      <div class="flex flex-col gap-1.5">
-        <div class="flex items-center gap-2">
-          <h1 class="text-2xl font-semibold tracking-tight text-text">
-            {{ title }}
-          </h1>
-          <tsai-badge variant="accent">&#64;tsai-pe/ui-kit</tsai-badge>
-        </div>
-        <p class="max-w-xl text-sm text-text-2">
-          Живая витрина компонентов Pipeline Editor — dark-first премиум-тема на
-          Tailwind v4 поверх headless-примитивов Angular Aria.
-        </p>
-      </div>
-      <tsai-button variant="secondary" size="sm" (click)="toggleTheme()">
-        {{ isLight() ? '🌙 Тёмная тема' : '☀️ Светлая тема' }}
+<main
+  class="min-h-screen"
+  style="
+    background: radial-gradient(
+      100% 55% at 50% 0%,
+      rgba(124, 92, 255, 0.06),
+      transparent 60%
+    );
+  "
+>
+  <div class="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
+    <tsai-navbar>
+      <h1 brand class="text-sm font-semibold text-text">{{ title }}</h1>
+      <span center class="hidden text-xs text-text-3 md:inline">
+        &#64;tsai-pe/ui-kit
+      </span>
+      <tsai-button
+        actions
+        variant="secondary"
+        size="sm"
+        (click)="toggleTheme()"
+      >
+        {{ isLight() ? '🌙 Dark' : '☀️ Light' }}
       </tsai-button>
-    </header>
+    </tsai-navbar>
 
-    <div class="grid gap-4 md:grid-cols-2">
-      <tsai-card title="Buttons">
-        <div class="flex flex-col gap-4">
-          <div class="flex flex-wrap items-center gap-2">
-            <tsai-button variant="primary">Primary</tsai-button>
-            <tsai-button variant="secondary">Secondary</tsai-button>
-            <tsai-button variant="ghost">Ghost</tsai-button>
-            <tsai-button variant="danger">Danger</tsai-button>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <tsai-button size="sm">Small</tsai-button>
-            <tsai-button size="md">Medium</tsai-button>
-            <tsai-button [disabled]="true">Disabled</tsai-button>
-          </div>
-        </div>
-      </tsai-card>
-
-      <tsai-card title="Badges">
-        <div class="flex flex-wrap items-center gap-2">
-          <tsai-badge variant="trigger">Trigger</tsai-badge>
-          <tsai-badge variant="middleware">Middleware</tsai-badge>
-          <tsai-badge variant="result">Result</tsai-badge>
-          <tsai-badge variant="accent">Accent</tsai-badge>
-          <tsai-badge variant="success">Success</tsai-badge>
-          <tsai-badge variant="warning">Warning</tsai-badge>
-          <tsai-badge variant="danger">Danger</tsai-badge>
-          <tsai-badge>Neutral</tsai-badge>
-        </div>
-      </tsai-card>
-
-      <tsai-card title="Text fields">
-        <div class="flex flex-col gap-4">
-          <tsai-field
-            label="Имя пайплайна"
-            hint="Отображается в списке пайплайнов"
-          >
-            <tsai-input
-              [value]="name()"
-              (valueChange)="name.set($event)"
-              placeholder="Например, Lead enrichment"
-            />
-          </tsai-field>
-          <tsai-field
-            label="Webhook URL"
-            [required]="true"
-            error="Обязательное поле"
-          >
-            <tsai-input [invalid]="true" placeholder="https://…" />
-          </tsai-field>
-          <tsai-field label="Описание">
-            <tsai-textarea
-              [value]="notes()"
-              (valueChange)="notes.set($event)"
-              placeholder="Что делает пайплайн…"
-              [rows]="3"
-            />
-          </tsai-field>
-        </div>
-      </tsai-card>
-
-      <tsai-card title="Toggles & choices">
-        <div class="flex flex-col gap-4">
-          <tsai-checkbox
-            [checked]="agree()"
-            (checkedChange)="agree.set($event)"
-          >
-            Включить логирование
-          </tsai-checkbox>
-          <tsai-checkbox
-            [checked]="notify()"
-            (checkedChange)="notify.set($event)"
-          >
-            Уведомлять об ошибках
-          </tsai-checkbox>
-          <div class="flex items-center gap-3">
-            <tsai-switch
-              [checked]="enabled()"
-              (checkedChange)="enabled.set($event)"
-            />
-            <span class="text-sm text-text-2">
-              Пайплайн {{ enabled() ? 'активен' : 'выключен' }}
-            </span>
-          </div>
-          <div class="flex flex-col gap-2">
-            <span class="text-sm font-medium text-text-2">Роль узла</span>
-            <tsai-radio-group
-              [options]="roleOptions"
-              [value]="role()"
-              (valueChange)="role.set($event)"
-            />
-          </div>
-        </div>
-      </tsai-card>
-
-      <div class="md:col-span-2">
-        <tsai-card title="Select · Angular Aria listbox">
-          <div class="grid gap-4 sm:grid-cols-2">
-            <div class="flex flex-col gap-2">
-              <span class="text-sm font-medium text-text-2"
-                >Триггер (single)</span
-              >
-              <tsai-select
-                [options]="triggerOptions"
-                [value]="selectValue()"
-                (valueChange)="selectValue.set($event)"
-              />
-              <span class="text-xs text-text-3">
-                Выбрано: {{ selectValue().join(', ') || '—' }}
-              </span>
-            </div>
-            <div class="flex flex-col gap-2">
-              <span class="text-sm font-medium text-text-2"
-                >Действия (multi)</span
-              >
-              <tsai-select
-                [options]="actionOptions"
-                [multi]="true"
-                [value]="multiValue()"
-                (valueChange)="multiValue.set($event)"
-              />
-              <span class="text-xs text-text-3">
-                Выбрано: {{ multiValue().join(', ') || '—' }}
-              </span>
-            </div>
-          </div>
-        </tsai-card>
+    <div class="flex gap-6">
+      <div class="sticky top-6 hidden h-fit lg:block">
+        <tsai-sidebar>
+          @for (s of sections; track s.id) {
+          <tsai-sidebar-item [active]="active() === s.id" (click)="go(s.id)">
+            {{ s.label }}
+          </tsai-sidebar-item>
+          }
+        </tsai-sidebar>
       </div>
 
-      <div class="md:col-span-2">
-        <tsai-card title="Tabs · Angular Aria">
-          <tsai-tabs>
-            <tsai-tab label="Параметры">
-              <p class="m-0">Настройки выбранного узла пайплайна.</p>
-            </tsai-tab>
-            <tsai-tab label="Входные данные">
-              <p class="m-0">Предпросмотр входных данных узла.</p>
-            </tsai-tab>
-            <tsai-tab label="Логи" [disabled]="true">
-              <p class="m-0">—</p>
-            </tsai-tab>
-          </tsai-tabs>
-        </tsai-card>
-      </div>
+      <div class="flex min-w-0 flex-1 flex-col gap-12">
+        <!-- ══ BUTTONS ══ -->
+        <section id="buttons" class="flex flex-col gap-4">
+          <h2 class="text-lg font-semibold text-text">Buttons</h2>
+          <tsai-card>
+            <div class="flex flex-col gap-6">
+              <div>
+                <p
+                  class="mb-2 text-xs font-medium uppercase tracking-wide text-text-3"
+                >
+                  Variants
+                </p>
+                <div class="flex flex-wrap items-center gap-2">
+                  <tsai-button variant="primary">Primary</tsai-button>
+                  <tsai-button variant="secondary">Secondary</tsai-button>
+                  <tsai-button variant="ghost">Ghost</tsai-button>
+                  <tsai-button variant="danger">Danger</tsai-button>
+                </div>
+              </div>
+              <div>
+                <p
+                  class="mb-2 text-xs font-medium uppercase tracking-wide text-text-3"
+                >
+                  Sizes &amp; icons
+                </p>
+                <div class="flex flex-wrap items-center gap-2">
+                  <tsai-button size="sm">Small</tsai-button>
+                  <tsai-button size="md">Medium</tsai-button>
+                  <tsai-button variant="primary">
+                    <lucide-icon icon-left [img]="icons.plus" [size]="16" />
+                    New
+                  </tsai-button>
+                  <tsai-button variant="secondary">
+                    Next
+                    <lucide-icon
+                      icon-right
+                      [img]="icons.arrowRight"
+                      [size]="16"
+                    />
+                  </tsai-button>
+                  <tsai-button variant="ghost" size="sm" aria-label="Settings">
+                    <lucide-icon icon-left [img]="icons.settings" [size]="16" />
+                  </tsai-button>
+                </div>
+              </div>
+              <div>
+                <p
+                  class="mb-2 text-xs font-medium uppercase tracking-wide text-text-3"
+                >
+                  States
+                </p>
+                <div class="flex flex-wrap items-center gap-2">
+                  <tsai-button>Default</tsai-button>
+                  <tsai-button [disabled]="true">Disabled</tsai-button>
+                  <tsai-button [loading]="true">Loading</tsai-button>
+                </div>
+              </div>
+            </div>
+          </tsai-card>
+        </section>
 
-      <div class="md:col-span-2">
-        <tsai-card title="Accordion · Angular Aria">
-          <tsai-accordion>
-            <tsai-accordion-item label="Аутентификация">
-              <p class="m-0">Настройки авторизации для HTTP-запроса.</p>
-            </tsai-accordion-item>
-            <tsai-accordion-item label="Заголовки">
-              <p class="m-0">Дополнительные HTTP-заголовки запроса.</p>
-            </tsai-accordion-item>
-            <tsai-accordion-item label="Повторы">
-              <p class="m-0">Стратегия повторов при ошибке выполнения.</p>
-            </tsai-accordion-item>
-          </tsai-accordion>
-        </tsai-card>
+        <!-- ══ INPUTS ══ -->
+        <section id="inputs" class="flex flex-col gap-4">
+          <h2 class="text-lg font-semibold text-text">Inputs</h2>
+          <tsai-card>
+            <div class="flex flex-col gap-5">
+              <tsai-form-row [cols]="2">
+                <tsai-field label="Search" hint="With leading icon and clear">
+                  <tsai-input
+                    [value]="search()"
+                    (valueChange)="search.set($event)"
+                    [clearable]="true"
+                    placeholder="Search…"
+                  >
+                    <lucide-icon icon-left [img]="icons.search" [size]="16" />
+                  </tsai-input>
+                </tsai-field>
+                <tsai-field label="Email">
+                  <tsai-input type="email" placeholder="name@example.com" />
+                </tsai-field>
+                <tsai-field label="Password">
+                  <tsai-input type="password" [value]="'secret123'" />
+                </tsai-field>
+                <tsai-field label="Date">
+                  <tsai-date-input
+                    [value]="date()"
+                    (valueChange)="date.set($event)"
+                  />
+                </tsai-field>
+                <tsai-field label="Number (integer)">
+                  <tsai-number-input
+                    [value]="amount()"
+                    (valueChange)="amount.set($event)"
+                    [min]="0"
+                    [max]="20"
+                  />
+                </tsai-field>
+                <tsai-field label="Number (2 decimals, step 0.5)">
+                  <tsai-number-input
+                    [value]="price()"
+                    (valueChange)="price.set($event)"
+                    [decimals]="2"
+                    [stepBy]="0.5"
+                    [min]="0"
+                  />
+                </tsai-field>
+              </tsai-form-row>
+
+              <div>
+                <p
+                  class="mb-2 text-xs font-medium uppercase tracking-wide text-text-3"
+                >
+                  Select
+                </p>
+                <tsai-form-row [cols]="2">
+                  <tsai-select
+                    [options]="selectOptions"
+                    [value]="selectValue()"
+                    (valueChange)="selectValue.set($event)"
+                    placeholder="Pick a framework…"
+                  />
+                  <tsai-select
+                    [options]="tagOptions"
+                    [multi]="true"
+                    [value]="tagsValue()"
+                    (valueChange)="tagsValue.set($event)"
+                    placeholder="Pick tags…"
+                  />
+                </tsai-form-row>
+              </div>
+
+              <div>
+                <p
+                  class="mb-2 text-xs font-medium uppercase tracking-wide text-text-3"
+                >
+                  Segmented
+                </p>
+                <tsai-segmented
+                  [options]="viewOptions"
+                  [value]="view()"
+                  (valueChange)="view.set($event)"
+                />
+              </div>
+
+              <div>
+                <p
+                  class="mb-2 text-xs font-medium uppercase tracking-wide text-text-3"
+                >
+                  Combobox &amp; Date picker
+                </p>
+                <tsai-form-row [cols]="2">
+                  <tsai-combobox
+                    [options]="comboOptions"
+                    [value]="country()"
+                    (valueChange)="country.set($event)"
+                    placeholder="Search framework…"
+                  />
+                  <tsai-datepicker
+                    [value]="calendarDate()"
+                    (valueChange)="calendarDate.set($event)"
+                  />
+                </tsai-form-row>
+              </div>
+
+              <tsai-form-row [cols]="2">
+                <tsai-field
+                  label="Invalid"
+                  [required]="true"
+                  error="This field is required"
+                >
+                  <tsai-input [invalid]="true" placeholder="Required…" />
+                </tsai-field>
+                <tsai-field label="Disabled">
+                  <tsai-input [disabled]="true" [value]="'Read only'" />
+                </tsai-field>
+              </tsai-form-row>
+
+              <tsai-field label="Textarea">
+                <tsai-textarea
+                  [value]="message()"
+                  (valueChange)="message.set($event)"
+                  placeholder="Multi-line text…"
+                  [rows]="3"
+                />
+              </tsai-field>
+
+              <tsai-field label="Code (monospace)">
+                <tsai-textarea
+                  [mono]="true"
+                  [rows]="5"
+                  [value]="code()"
+                  (valueChange)="code.set($event)"
+                />
+              </tsai-field>
+
+              <div class="flex flex-wrap items-start gap-x-10 gap-y-4">
+                <div class="flex flex-col gap-2">
+                  <tsai-checkbox
+                    [checked]="check1()"
+                    (checkedChange)="check1.set($event)"
+                  >
+                    Checkbox on
+                  </tsai-checkbox>
+                  <tsai-checkbox
+                    [checked]="check2()"
+                    (checkedChange)="check2.set($event)"
+                  >
+                    Checkbox off
+                  </tsai-checkbox>
+                  <tsai-checkbox [checked]="true" [disabled]="true">
+                    Disabled
+                  </tsai-checkbox>
+                </div>
+                <div class="flex flex-col gap-3">
+                  <div class="flex items-center gap-2">
+                    <tsai-switch
+                      [checked]="toggle()"
+                      (checkedChange)="toggle.set($event)"
+                    />
+                    <span class="text-sm text-text-2">
+                      {{ toggle() ? 'On' : 'Off' }}
+                    </span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <tsai-switch [checked]="false" [disabled]="true" />
+                    <span class="text-sm text-text-3">Disabled</span>
+                  </div>
+                </div>
+                <tsai-radio-group
+                  [options]="choiceOptions"
+                  [value]="choice()"
+                  (valueChange)="choice.set($event)"
+                  name="choice"
+                />
+              </div>
+            </div>
+          </tsai-card>
+        </section>
+
+        <!-- ══ FORMS (signal forms) ══ -->
+        <section id="forms" class="flex flex-col gap-4">
+          <h2 class="text-lg font-semibold text-text">Forms · signal forms</h2>
+          <tsai-card>
+            <div class="flex max-w-md flex-col gap-4">
+              <tsai-field
+                label="Name"
+                [required]="true"
+                [error]="fieldError(signupForm.name)"
+              >
+                <tsai-input
+                  [formField]="signupForm.name"
+                  placeholder="Your name"
+                />
+              </tsai-field>
+              <tsai-field
+                label="Email"
+                [required]="true"
+                [error]="fieldError(signupForm.email)"
+              >
+                <tsai-input
+                  type="email"
+                  [formField]="signupForm.email"
+                  placeholder="name@example.com"
+                />
+              </tsai-field>
+              <tsai-field
+                label="Framework"
+                [required]="true"
+                [error]="fieldError(signupForm.framework)"
+              >
+                <tsai-combobox
+                  [options]="comboOptions"
+                  [formField]="signupForm.framework"
+                  placeholder="Search framework…"
+                />
+              </tsai-field>
+              <tsai-checkbox [formField]="signupForm.agree">
+                I agree to the terms
+              </tsai-checkbox>
+              <div class="flex items-center gap-3">
+                <tsai-button (click)="submitSignup()"
+                  >Create account</tsai-button
+                >
+                <span class="text-xs text-text-3">
+                  Form is {{ signupForm().valid() ? 'valid ✓' : 'invalid' }}
+                </span>
+              </div>
+            </div>
+          </tsai-card>
+        </section>
+
+        <!-- ══ BLOCKS ══ -->
+        <section id="blocks" class="flex flex-col gap-4">
+          <h2 class="text-lg font-semibold text-text">Blocks</h2>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <tsai-card title="Card">
+              <p class="text-sm text-text-2">
+                Flat surface: a hairline border, no glow, no material shadows.
+              </p>
+            </tsai-card>
+            <tsai-glow-surface>
+              <h3 class="mb-1 text-sm font-semibold text-text">GlowSurface</h3>
+              <p class="text-sm text-text-2">
+                Premium surface: blurred accent circles, an ambient wash and
+                fine grain.
+              </p>
+            </tsai-glow-surface>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <tsai-card title="Tabs">
+              <tsai-tabs>
+                <tsai-tab label="One">
+                  <p class="m-0">Content of the first tab.</p>
+                </tsai-tab>
+                <tsai-tab label="Two">
+                  <p class="m-0">Content of the second tab.</p>
+                </tsai-tab>
+                <tsai-tab label="Disabled" [disabled]="true">
+                  <p class="m-0">—</p>
+                </tsai-tab>
+              </tsai-tabs>
+            </tsai-card>
+            <tsai-card title="Accordion">
+              <tsai-accordion>
+                <tsai-accordion-item label="Section one">
+                  <p class="m-0">Collapsible content one.</p>
+                </tsai-accordion-item>
+                <tsai-accordion-item label="Section two">
+                  <p class="m-0">Collapsible content two.</p>
+                </tsai-accordion-item>
+                <tsai-accordion-item label="Section three">
+                  <p class="m-0">Collapsible content three.</p>
+                </tsai-accordion-item>
+              </tsai-accordion>
+            </tsai-card>
+          </div>
+
+          <tsai-card title="Chat">
+            <tsai-glow-surface>
+              <div class="flex flex-col gap-4">
+                <div class="flex flex-col gap-4">
+                  @for (m of messages(); track $index) {
+                  <tsai-chat-message [role]="m.role">
+                    {{ m.text }}
+                  </tsai-chat-message>
+                  }
+                </div>
+                <tsai-chat-input
+                  placeholder="Type a message…"
+                  (sent)="onSend($event)"
+                />
+              </div>
+            </tsai-glow-surface>
+          </tsai-card>
+        </section>
+
+        <!-- ══ FEEDBACK ══ -->
+        <section id="feedback" class="flex flex-col gap-4">
+          <h2 class="text-lg font-semibold text-text">Feedback</h2>
+
+          <tsai-card title="Alerts">
+            <div class="flex flex-col gap-3">
+              <tsai-alert variant="info"
+                >Heads up — this is an info alert.</tsai-alert
+              >
+              <tsai-alert variant="success"
+                >Changes saved successfully.</tsai-alert
+              >
+              <tsai-alert variant="warning"
+                >Double-check the values.</tsai-alert
+              >
+              <tsai-alert
+                variant="danger"
+                title="Something went wrong"
+                [dismissible]="true"
+              >
+                A dismissible danger alert with a title.
+              </tsai-alert>
+            </div>
+          </tsai-card>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <tsai-card title="Tags & Badges">
+              <div class="flex flex-col gap-4">
+                <div class="flex flex-wrap items-center gap-2">
+                  @for (t of tags(); track t) {
+                  <tsai-tag
+                    variant="accent"
+                    [removable]="true"
+                    (removed)="removeTag(t)"
+                  >
+                    {{ t }}
+                  </tsai-tag>
+                  }
+                  <tsai-tag>Static</tsai-tag>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <tsai-badge variant="accent">Accent</tsai-badge>
+                  <tsai-badge variant="success">Success</tsai-badge>
+                  <tsai-badge variant="warning">Warning</tsai-badge>
+                  <tsai-badge variant="danger">Danger</tsai-badge>
+                  <tsai-badge>Neutral</tsai-badge>
+                </div>
+              </div>
+            </tsai-card>
+
+            <tsai-card title="Avatars & Skeleton">
+              <div class="flex flex-col gap-4">
+                <div class="flex items-center gap-3">
+                  <tsai-avatar name="Ada Lovelace" size="sm" />
+                  <tsai-avatar name="Grace Hopper" size="md" />
+                  <tsai-avatar name="Alan Turing" size="lg" />
+                </div>
+                <div class="flex items-center gap-3">
+                  <tsai-skeleton [circle]="true" class="size-10" />
+                  <div class="flex flex-1 flex-col gap-2">
+                    <tsai-skeleton class="h-3 w-2/3" />
+                    <tsai-skeleton class="h-3 w-1/3" />
+                  </div>
+                </div>
+              </div>
+            </tsai-card>
+          </div>
+        </section>
+
+        <!-- ══ OVERLAYS ══ -->
+        <section id="overlays" class="flex flex-col gap-4">
+          <h2 class="text-lg font-semibold text-text">Overlays</h2>
+
+          <tsai-card title="Dialog, Drawer, Menu, Tooltip & Toast">
+            <div class="flex flex-wrap items-center gap-2">
+              <tsai-button (click)="dialogOpen.set(true)">
+                <lucide-icon icon-left [img]="icons.settings" [size]="16" />
+                Dialog
+              </tsai-button>
+
+              <tsai-button variant="secondary" (click)="drawerOpen.set(true)">
+                Drawer
+              </tsai-button>
+
+              <tsai-button variant="secondary" [tsaiMenuTriggerFor]="menu">
+                Menu
+                <lucide-icon icon-right [img]="icons.arrowRight" [size]="16" />
+              </tsai-button>
+
+              <tsai-button
+                variant="secondary"
+                [tsaiTooltip]="'Tooltips show on hover and keyboard focus'"
+              >
+                Tooltip
+              </tsai-button>
+
+              <span class="mx-1 h-5 w-px bg-border"></span>
+
+              <tsai-button variant="ghost" size="sm" (click)="notify('info')">
+                Info toast
+              </tsai-button>
+              <tsai-button
+                variant="ghost"
+                size="sm"
+                (click)="notify('success')"
+              >
+                Success toast
+              </tsai-button>
+              <tsai-button variant="ghost" size="sm" (click)="notify('danger')">
+                Danger toast
+              </tsai-button>
+            </div>
+
+            <tsai-dialog
+              [open]="dialogOpen()"
+              (openChange)="dialogOpen.set($event)"
+              title="Confirm action"
+            >
+              <p class="m-0">
+                A modal on a glass backdrop — focus-trapped, scroll-locked,
+                closes on Escape or backdrop click.
+              </p>
+              <ng-container dialog-footer>
+                <tsai-button variant="ghost" (click)="dialogOpen.set(false)">
+                  Cancel
+                </tsai-button>
+                <tsai-button variant="primary" (click)="dialogOpen.set(false)">
+                  Confirm
+                </tsai-button>
+              </ng-container>
+            </tsai-dialog>
+
+            <tsai-drawer
+              [open]="drawerOpen()"
+              (openChange)="drawerOpen.set($event)"
+              title="Details"
+              side="right"
+            >
+              <p class="m-0">
+                A slide-over drawer sharing the same overlay layer (glass
+                backdrop, focus trap, scroll lock).
+              </p>
+              <ng-container drawer-footer>
+                <tsai-button variant="ghost" (click)="drawerOpen.set(false)">
+                  Close
+                </tsai-button>
+              </ng-container>
+            </tsai-drawer>
+
+            <ng-template #menu>
+              <tsai-menu>
+                <tsai-menu-item (triggered)="notify('info')">
+                  <lucide-icon [img]="icons.copy" [size]="16" />
+                  Duplicate
+                </tsai-menu-item>
+                <tsai-menu-item (triggered)="notify('info')">
+                  <lucide-icon [img]="icons.download" [size]="16" />
+                  Export
+                </tsai-menu-item>
+                <tsai-menu-separator />
+                <tsai-menu-item (triggered)="notify('danger')">
+                  <lucide-icon [img]="icons.trash" [size]="16" />
+                  Delete
+                </tsai-menu-item>
+              </tsai-menu>
+            </ng-template>
+          </tsai-card>
+        </section>
+
+        <!-- ══ LAYOUT ══ -->
+        <section id="layout" class="flex flex-col gap-4">
+          <h2 class="text-lg font-semibold text-text">Layout</h2>
+
+          <tsai-card title="Navbar">
+            <tsai-navbar>
+              <span brand>Brand</span>
+              <nav center class="hidden gap-1 sm:flex">
+                <tsai-button variant="ghost" size="sm">Home</tsai-button>
+                <tsai-button variant="ghost" size="sm">Docs</tsai-button>
+              </nav>
+              <tsai-button actions size="sm">
+                <lucide-icon icon-left [img]="icons.download" [size]="16" />
+                Install
+              </tsai-button>
+            </tsai-navbar>
+          </tsai-card>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <tsai-card title="Sidebar">
+              <tsai-sidebar>
+                <tsai-sidebar-item [active]="true">Overview</tsai-sidebar-item>
+                <tsai-sidebar-item>Settings</tsai-sidebar-item>
+                <tsai-sidebar-item>Members</tsai-sidebar-item>
+                <tsai-sidebar-item>Billing</tsai-sidebar-item>
+              </tsai-sidebar>
+            </tsai-card>
+            <tsai-card title="Actionbar">
+              <div class="flex justify-center py-6">
+                <tsai-actionbar>
+                  <tsai-button variant="ghost" size="sm">Cancel</tsai-button>
+                  <tsai-button variant="ghost" size="sm">Reset</tsai-button>
+                  <tsai-button variant="primary" size="sm">Save</tsai-button>
+                </tsai-actionbar>
+              </div>
+            </tsai-card>
+          </div>
+        </section>
+
+        <!-- ══ LOADERS ══ -->
+        <section id="loaders" class="flex flex-col gap-4">
+          <h2 class="text-lg font-semibold text-text">Loaders</h2>
+          <tsai-card>
+            <div class="flex flex-wrap items-center gap-8">
+              <div class="flex items-center gap-4 text-accent">
+                <tsai-spinner size="sm" />
+                <tsai-spinner size="md" />
+                <tsai-spinner size="lg" />
+              </div>
+              <div class="flex items-center gap-4 text-text-3">
+                <tsai-spinner size="sm" />
+                <tsai-spinner size="md" />
+                <tsai-spinner size="lg" />
+              </div>
+            </div>
+          </tsai-card>
+        </section>
       </div>
     </div>
   </div>
