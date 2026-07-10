@@ -1,5 +1,5 @@
 import { computed, signal, Signal } from '@angular/core';
-import type { Point } from '@tsai-pe/shared/models';
+import type { Point, Rect, Size } from '@tsai-pe/shared/models';
 import { clamp } from './geometry';
 
 const MIN_ZOOM = 0.35;
@@ -52,6 +52,27 @@ export class Viewport {
   reset(): void {
     this._pan.set({ x: 0, y: 0 });
     this._zoom.set(1);
+  }
+
+  /** Pan/zoom so `bounds` (world px) fits centered within a `size` viewport. */
+  fitTo(bounds: Rect, size: Size, padding = 64): void {
+    if (bounds.width <= 0 || bounds.height <= 0) return;
+    if (size.width <= 0 || size.height <= 0) return;
+    const zoom = clamp(
+      Math.min(
+        (size.width - padding * 2) / bounds.width,
+        (size.height - padding * 2) / bounds.height,
+      ),
+      MIN_ZOOM,
+      MAX_ZOOM,
+    );
+    const cx = bounds.x + bounds.width / 2;
+    const cy = bounds.y + bounds.height / 2;
+    this._zoom.set(zoom);
+    this._pan.set({
+      x: size.width / 2 - cx * zoom,
+      y: size.height / 2 - cy * zoom,
+    });
   }
 
   /** Convert a point from screen space to board (world) space. */

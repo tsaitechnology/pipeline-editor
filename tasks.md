@@ -115,7 +115,10 @@ Tooltip (directive), Toast + ToastService.
       draw connections (drag output→input), select node/edge, right-click /
       long-press context menu (add node / delete / reset). Wired into `/board`
       with the "draw 10 cats" demo pipeline.
+- [x] Rubber-band multi-select; z-order (selected node paints on top);
+      side-aware edge curves (tangents leave along each port's normal).
+- [x] Keyboard: Delete / Backspace removes selection, Escape clears / closes
+      menu, F fits; floating zoom / fit / reset toolbar.
 - [ ] Connection routing on the 16-subgrid (waypoints) + orthogonal edges.
-- [ ] Node palette / drag-from-sidebar; multi-select rubber band; copy/paste.
-- [ ] Minimap + fit-to-content; keyboard nav & delete; undo/redo.
-- [ ] Pipeline (de)serialization + validation (DAG, port compatibility).
+- [ ] Node palette / drag-from-sidebar; copy / paste; undo / redo.
+- [ ] Minimap; DAG + port-compatibility validation; pipeline (de)serialization.

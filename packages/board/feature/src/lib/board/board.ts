@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   ElementRef,
   effect,
   inject,
@@ -23,10 +24,14 @@ import {
   type NodeKind,
   type Pipeline,
   type Point,
+  type PortSide,
+  type Rect,
+  type Size,
 } from '@tsai-pe/shared/models';
 
 const LONG_PRESS_MS = 500;
 const MOVE_THRESHOLD = 4;
+const ZOOM_STEP = 1.2;
 
 /** A resolved port drop target under the cursor. */
 interface PortHit {
@@ -38,7 +43,8 @@ interface PortHit {
 type Drag =
   | { mode: 'pan'; startClient: Point; startPan: Point; moved: boolean }
   | { mode: 'move'; nodeId: string; startBoard: Point; startPx: Point }
-  | { mode: 'connect'; from: EdgeEnd; anchor: Point };
+  | { mode: 'connect'; from: EdgeEnd; anchor: Point; side: PortSide }
+  | { mode: 'select'; startLocal: Point; additive: boolean };
 
 /** A contextual menu opened by right-click (desktop) or long-press (touch). */
 interface ContextMenu {
@@ -64,12 +70,14 @@ interface ContextMenu {
   styleUrl: './board.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
+    tabindex: '0',
     '(pointerdown)': 'onPointerDown($event)',
     '(pointermove)': 'onPointerMove($event)',
     '(pointerup)': 'onPointerUp($event)',
     '(pointercancel)': 'onPointerUp($event)',
     '(contextmenu)': 'onContextMenu($event)',
     '(wheel)': 'onWheel($event)',
+    '(keydown)': 'onKeyDown($event)',
   },
 })
 export class Board {
@@ -86,6 +94,16 @@ export class Board {
   /** Live bezier path while drawing a connection. */
   protected readonly draftPath = signal<string | null>(null);
   protected readonly menu = signal<ContextMenu | null>(null);
+  /** Rubber-band selection rectangle, in local (screen) pixels. */
+  protected readonly marquee = signal<Rect | null>(null);
+
+  /** Nodes with the selected ones last, so selection paints on top. */
+  protected readonly orderedNodes = computed(() => {
+    const sel = this.store.selection();
+    return [...this.store.nodes()].sort(
+      (a, b) => Number(sel.has(a.id)) - Number(sel.has(b.id)),
+    );
+  });
 
   constructor() {
     effect(() => {
@@ -97,6 +115,7 @@ export class Board {
   // ── Board-level pointer handling (empty space, pan, drop) ────────────────
   protected onPointerDown(event: PointerEvent): void {
     this.menu.set(null);
+    this.hostEl.nativeElement.focus();
     if (this.drag) return; // a node/port handler already claimed this press
 
     const pan = event.button === 2 || event.pointerType === 'touch';
@@ -114,7 +133,13 @@ export class Board {
       return;
     }
 
-    if (event.button === 0) this.store.clearSelection();
+    // Left button on empty space → rubber-band selection.
+    if (event.button === 0) {
+      const additive = event.shiftKey || event.metaKey;
+      if (!additive) this.store.clearSelection();
+      this.drag = { mode: 'select', startLocal: this.local(event), additive };
+      this.capture(event);
+    }
   }
 
   protected onPointerMove(event: PointerEvent): void {
@@ -141,10 +166,24 @@ export class Board {
         drag.nodeId,
         snapToCell({ x: drag.startPx.x + dx, y: drag.startPx.y + dy }),
       );
-    } else {
+    } else if (drag.mode === 'connect') {
       this.cancelLongPress();
       const board = this.store.viewport.screenToBoard(this.local(event));
-      this.draftPath.set(edgePath(drag.anchor, board));
+      this.draftPath.set(edgePath(drag.anchor, board, drag.side, 'left'));
+    } else {
+      // Marquee: update the rectangle and live-select intersecting nodes.
+      const now = this.local(event);
+      const rect = this.rectFrom(drag.startLocal, now);
+      this.marquee.set(rect);
+      const a = this.store.viewport.screenToBoard({ x: rect.x, y: rect.y });
+      const b = this.store.viewport.screenToBoard({
+        x: rect.x + rect.width,
+        y: rect.y + rect.height,
+      });
+      this.store.selectInRect(
+        { x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y },
+        drag.additive,
+      );
     }
   }
 
@@ -155,7 +194,9 @@ export class Board {
     this.release(event);
     if (!drag) return;
 
-    if (drag.mode === 'connect') {
+    if (drag.mode === 'select') {
+      this.marquee.set(null);
+    } else if (drag.mode === 'connect') {
       this.draftPath.set(null);
       const hit = this.portAt(event.clientX, event.clientY);
       if (hit && hit.role === 'input') {
@@ -184,6 +225,42 @@ export class Board {
     this.store.viewport.zoomAround(this.local(event), factor);
   }
 
+  protected onKeyDown(event: KeyboardEvent): void {
+    switch (event.key) {
+      case 'Delete':
+      case 'Backspace':
+        event.preventDefault();
+        this.store.removeSelected();
+        break;
+      case 'Escape':
+        this.menu.set(null);
+        this.store.clearSelection();
+        break;
+      case 'f':
+      case 'F':
+        this.fitView();
+        break;
+    }
+  }
+
+  // ── Toolbar / view controls ──────────────────────────────────────────────
+  protected zoomIn(): void {
+    this.store.viewport.zoomAround(this.center(), ZOOM_STEP);
+  }
+
+  protected zoomOut(): void {
+    this.store.viewport.zoomAround(this.center(), 1 / ZOOM_STEP);
+  }
+
+  protected fitView(): void {
+    this.store.viewport.fitTo(this.store.contentBounds(), this.size());
+  }
+
+  protected resetView(): void {
+    this.store.viewport.reset();
+    this.menu.set(null);
+  }
+
   // ── Node / port / edge intents (from pe-node + the edge layer) ───────────
   protected onNodeDown(node: BoardNode, event: PointerEvent): void {
     if (event.button !== 0 && event.pointerType !== 'touch') return;
@@ -208,8 +285,9 @@ export class Board {
       mode: 'connect',
       from: { nodeId: node.id, portId: pointer.port.id },
       anchor,
+      side: pointer.port.side,
     };
-    this.draftPath.set(edgePath(anchor, anchor));
+    this.draftPath.set(edgePath(anchor, anchor, pointer.port.side, 'left'));
     this.capture(pointer.event);
   }
 
@@ -234,11 +312,6 @@ export class Board {
   protected deleteNode(): void {
     const id = this.menu()?.nodeId;
     if (id) this.store.removeNode(id);
-    this.menu.set(null);
-  }
-
-  protected resetView(): void {
-    this.store.viewport.reset();
     this.menu.set(null);
   }
 
@@ -271,6 +344,26 @@ export class Board {
   private local(event: PointerEvent | WheelEvent): Point {
     const rect = this.hostEl.nativeElement.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  }
+
+  private size(): Size {
+    const el = this.hostEl.nativeElement;
+    return { width: el.clientWidth, height: el.clientHeight };
+  }
+
+  private center(): Point {
+    const { width, height } = this.size();
+    return { x: width / 2, y: height / 2 };
+  }
+
+  /** Normalized rectangle (positive width/height) between two local points. */
+  private rectFrom(a: Point, b: Point): Rect {
+    return {
+      x: Math.min(a.x, b.x),
+      y: Math.min(a.y, b.y),
+      width: Math.abs(a.x - b.x),
+      height: Math.abs(a.y - b.y),
+    };
   }
 
   private portAt(clientX: number, clientY: number): PortHit | null {

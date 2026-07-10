@@ -8,6 +8,7 @@
   /* Own all touch gestures so mobile pan/long-press don't scroll the page. */
   touch-action: none;
   user-select: none;
+  outline: none;
 }
 
 .pe-board__world {
@@ -54,6 +55,50 @@
   stroke-width: 2;
   stroke-dasharray: 6 5;
   pointer-events: none;
+}
+
+/* ── Rubber-band selection ─────────────────────────────────────────────────── */
+.pe-marquee {
+  position: absolute;
+  z-index: 15;
+  pointer-events: none;
+  border: 1px solid var(--accent);
+  background: var(--accent-quiet);
+  border-radius: 2px;
+}
+
+/* ── Zoom / view toolbar ───────────────────────────────────────────────────── */
+.pe-toolbar {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 18;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  box-shadow: var(--elev-1);
+}
+
+.pe-toolbar__btn {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-2);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.pe-toolbar__btn:hover {
+  color: var(--text);
+  background: var(--surface-3);
 }
 
 /* ── Context menu ──────────────────────────────────────────────────────────── */

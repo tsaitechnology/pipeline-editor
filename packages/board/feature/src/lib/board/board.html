@@ -18,7 +18,7 @@
     }
   </svg>
 
-  @for (node of store.nodes(); track node.id) {
+  @for (node of orderedNodes(); track node.id) {
     <pe-node
       [node]="node"
       [selected]="store.isSelected(node.id)"
@@ -26,6 +26,52 @@
       (portPointerDown)="onPortDown(node, $event)"
     />
   }
+</div>
+
+@if (marquee(); as m) {
+  <div
+    class="pe-marquee"
+    aria-hidden="true"
+    [style.left.px]="m.x"
+    [style.top.px]="m.y"
+    [style.width.px]="m.width"
+    [style.height.px]="m.height"
+  ></div>
+}
+
+<div class="pe-toolbar" (pointerdown)="$event.stopPropagation()">
+  <button
+    type="button"
+    class="pe-toolbar__btn"
+    aria-label="Zoom out"
+    (click)="zoomOut()"
+  >
+    −
+  </button>
+  <button
+    type="button"
+    class="pe-toolbar__btn"
+    aria-label="Zoom in"
+    (click)="zoomIn()"
+  >
+    +
+  </button>
+  <button
+    type="button"
+    class="pe-toolbar__btn"
+    aria-label="Fit to content"
+    (click)="fitView()"
+  >
+    Fit
+  </button>
+  <button
+    type="button"
+    class="pe-toolbar__btn"
+    aria-label="Reset view"
+    (click)="resetView()"
+  >
+    1:1
+  </button>
 </div>
 
 @if (menu(); as m) {

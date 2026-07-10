@@ -1,5 +1,6 @@
 import { computed, signal, Signal } from '@angular/core';
 import {
+  type ActionCategory,
   type BoardNode,
   type CellSize,
   defaultPorts,
@@ -7,11 +8,13 @@ import {
   type EdgeEnd,
   type GridPos,
   type NodeKind,
-  type ActionCategory,
+  type NodePort,
   type Pipeline,
   type Point,
+  type PortSide,
+  type Rect,
 } from '@tsai-pe/shared/models';
-import { edgePath, portAnchor } from './geometry';
+import { boundsOf, edgePath, nodeRect, portAnchor, rectsIntersect } from './geometry';
 import { Viewport } from './viewport';
 
 /** Fields needed to add a fresh node; `ports` default from its kind. */
@@ -67,14 +70,19 @@ export class BoardStore {
       if (!from || !to) continue;
       result.push({
         id: edge.id,
-        path: edgePath(from, to),
-        from,
-        to,
+        path: edgePath(from.point, to.point, from.side, to.side),
+        from: from.point,
+        to: to.point,
         selected: selected.has(edge.id),
       });
     }
     return result;
   });
+
+  /** Bounding rectangle (world px) of all nodes — for fit-to-content. */
+  readonly contentBounds: Signal<Rect> = computed(() =>
+    boundsOf(this._nodes().map(nodeRect)),
+  );
 
   load(pipeline: Pipeline): void {
     this._nodes.set(pipeline.nodes);
@@ -157,17 +165,47 @@ export class BoardStore {
     });
   }
 
+  /** Replace the selection with the given ids (optionally add to current). */
+  selectMany(ids: readonly string[], additive = false): void {
+    this._selection.set(new Set(additive ? [...this._selection(), ...ids] : ids));
+  }
+
+  /** Select every node whose rectangle intersects a world-space marquee rect. */
+  selectInRect(rect: Rect, additive = false): void {
+    const ids = this._nodes()
+      .filter((n) => rectsIntersect(nodeRect(n), rect))
+      .map((n) => n.id);
+    this.selectMany(ids, additive);
+  }
+
   clearSelection(): void {
     if (this._selection().size) this._selection.set(new Set());
+  }
+
+  /** Delete the current selection: selected nodes (+ their edges) and edges. */
+  removeSelected(): void {
+    const sel = this._selection();
+    if (!sel.size) return;
+    this._nodes.update((nodes) => nodes.filter((n) => !sel.has(n.id)));
+    this._edges.update((edges) =>
+      edges.filter(
+        (e) =>
+          !sel.has(e.id) &&
+          !sel.has(e.source.nodeId) &&
+          !sel.has(e.target.nodeId),
+      ),
+    );
+    this._selection.set(new Set());
   }
 
   private anchorOf(
     byId: Map<string, BoardNode>,
     nodeId: string,
     portId: string,
-  ): Point | undefined {
+  ): { point: Point; side: PortSide } | undefined {
     const node = byId.get(nodeId);
-    const port = node?.ports.find((p) => p.id === portId);
-    return node && port ? portAnchor(node, port) : undefined;
+    const port: NodePort | undefined = node?.ports.find((p) => p.id === portId);
+    if (!node || !port) return undefined;
+    return { point: portAnchor(node, port), side: port.side };
   }
 }

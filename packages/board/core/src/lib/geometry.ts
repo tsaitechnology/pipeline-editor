@@ -3,6 +3,7 @@ import type {
   GridPos,
   NodePort,
   Point,
+  PortSide,
   Rect,
 } from '@tsai-pe/shared/models';
 
@@ -67,11 +68,63 @@ export function rectContains(rect: Rect, point: Point): boolean {
   );
 }
 
+/** Whether two axis-aligned rectangles overlap. */
+export function rectsIntersect(a: Rect, b: Rect): boolean {
+  return (
+    a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y
+  );
+}
+
+/** Bounding rectangle enclosing all given rectangles (empty rect if none). */
+export function boundsOf(rects: readonly Rect[]): Rect {
+  if (!rects.length) return { x: 0, y: 0, width: 0, height: 0 };
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const r of rects) {
+    minX = Math.min(minX, r.x);
+    minY = Math.min(minY, r.y);
+    maxX = Math.max(maxX, r.x + r.width);
+    maxY = Math.max(maxY, r.y + r.height);
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+/** Outward unit normal for a port side — the direction its connection leaves. */
+function sideNormal(side: PortSide): Point {
+  switch (side) {
+    case 'left':
+      return { x: -1, y: 0 };
+    case 'right':
+      return { x: 1, y: 0 };
+    case 'top':
+      return { x: 0, y: -1 };
+    case 'bottom':
+      return { x: 0, y: 1 };
+  }
+}
+
 /**
- * SVG cubic-bezier path between two anchors, with horizontal tangents that fan out
- * from the source and into the target — the familiar n8n / flow-editor look.
+ * SVG cubic-bezier path between two anchors. Tangents leave along each port's
+ * outward normal (right/top/bottom output, left input), giving the familiar
+ * n8n / flow-editor look regardless of which side a port sits on.
  */
-export function edgePath(from: Point, to: Point): string {
-  const dx = Math.max(48, Math.abs(to.x - from.x) * 0.5);
-  return `M ${from.x},${from.y} C ${from.x + dx},${from.y} ${to.x - dx},${to.y} ${to.x},${to.y}`;
+export function edgePath(
+  from: Point,
+  to: Point,
+  fromSide: PortSide = 'right',
+  toSide: PortSide = 'left',
+): string {
+  const reach = Math.max(48, Math.hypot(to.x - from.x, to.y - from.y) * 0.4);
+  const f = sideNormal(fromSide);
+  const t = sideNormal(toSide);
+  const c1x = from.x + f.x * reach;
+  const c1y = from.y + f.y * reach;
+  const c2x = to.x + t.x * reach;
+  const c2y = to.y + t.y * reach;
+  return `M ${from.x},${from.y} C ${c1x},${c1y} ${c2x},${c2y} ${to.x},${to.y}`;
 }
