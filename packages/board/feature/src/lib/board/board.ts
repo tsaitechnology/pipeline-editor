@@ -34,6 +34,7 @@ import {
   type PortSide,
   type Rect,
   type Size,
+  type ValidationIssue,
 } from '@tsai-pe/shared/models';
 import { LucideAngularModule } from 'lucide-angular';
 
@@ -145,6 +146,15 @@ export class Board {
   protected readonly menu = signal<ContextMenu | null>(null);
   /** Rubber-band selection rectangle, in local (screen) pixels. */
   protected readonly marquee = signal<Rect | null>(null);
+  /** Whether the validation issues panel is open. */
+  protected readonly showIssues = signal(false);
+
+  protected readonly errorCount = computed(
+    () => this.store.issues().filter((i) => i.severity === 'error').length,
+  );
+  protected readonly warningCount = computed(
+    () => this.store.issues().filter((i) => i.severity === 'warning').length,
+  );
 
   /** Nodes with the selected ones last, so selection paints on top. */
   protected readonly orderedNodes = computed(() => {
@@ -432,6 +442,45 @@ export class Board {
       x: size.width / 2 - world.x * zoom,
       y: size.height / 2 - world.y * zoom,
     });
+  }
+
+  // ── Save / load / validation ─────────────────────────────────────────────
+  protected exportJson(): void {
+    const pipeline = this.store.toPipeline();
+    const blob = new Blob([JSON.stringify(pipeline, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(pipeline.name || 'pipeline').replace(/\s+/g, '-').toLowerCase()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  protected async onImportFile(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    try {
+      const pipeline = JSON.parse(await file.text()) as Pipeline;
+      if (Array.isArray(pipeline.nodes) && Array.isArray(pipeline.edges)) {
+        this.store.load(pipeline);
+        this.fitView();
+      }
+    } catch {
+      /* ignore malformed JSON */
+    }
+  }
+
+  protected toggleIssues(): void {
+    this.showIssues.update((v) => !v);
+  }
+
+  protected focusIssue(issue: ValidationIssue): void {
+    const id = issue.nodeId ?? issue.edgeId;
+    if (id) this.store.select(id);
   }
 
   // ── Toolbar / view controls ──────────────────────────────────────────────

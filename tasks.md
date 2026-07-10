@@ -127,4 +127,8 @@ Tooltip (directive), Toast + ToastService.
       (⌘/Ctrl+C/V, ⌘/Ctrl+D duplicate), undo / redo (snapshot history + toolbar),
       select-all (⌘/Ctrl+A).
 - [x] Minimap (nodes + viewport rect, click / drag to navigate).
-- [ ] DAG + port-compatibility validation; pipeline (de)serialization (save/load).
+- [x] Structural validation (`shared/models`): output→input port roles, 1:1
+      inputs, DAG (cycle detection), orphan-node warnings; live `issues` signal +
+      panel, and `connect()` rejects invalid/cyclic links (replaces on 1:1 input).
+- [x] Pipeline (de)serialization: Export downloads JSON, Import loads a JSON file
+      (`BoardStore.toPipeline` / `load`).

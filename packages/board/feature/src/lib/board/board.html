@@ -39,6 +39,52 @@
   ></div>
 }
 
+<div class="pe-actions" (pointerdown)="$event.stopPropagation()">
+  <button type="button" class="pe-toolbar__btn" (click)="exportJson()">
+    Export
+  </button>
+  <button type="button" class="pe-toolbar__btn" (click)="fileInput.click()">
+    Import
+  </button>
+  <input
+    #fileInput
+    type="file"
+    accept="application/json"
+    hidden
+    (change)="onImportFile($event)"
+  />
+  <button
+    type="button"
+    class="pe-status"
+    [class.pe-status--error]="errorCount() > 0"
+    [class.pe-status--warn]="errorCount() === 0 && warningCount() > 0"
+    (click)="toggleIssues()"
+  >
+    @if (errorCount() > 0) {
+      {{ errorCount() }} error{{ errorCount() > 1 ? 's' : '' }}
+    } @else if (warningCount() > 0) {
+      {{ warningCount() }} warning{{ warningCount() > 1 ? 's' : '' }}
+    } @else {
+      ✓ Valid
+    }
+  </button>
+</div>
+
+@if (showIssues() && store.issues().length) {
+  <div class="pe-issues" (pointerdown)="$event.stopPropagation()">
+    @for (issue of store.issues(); track $index) {
+      <button
+        type="button"
+        class="pe-issues__item"
+        [class.pe-issues__item--warn]="issue.severity === 'warning'"
+        (click)="focusIssue(issue)"
+      >
+        {{ issue.message }}
+      </button>
+    }
+  </div>
+}
+
 <aside class="pe-palette" (pointerdown)="$event.stopPropagation()">
   <span class="pe-palette__label">Nodes</span>
   @for (item of palette; track item.type) {

@@ -11,8 +11,12 @@ import {
   type NodePort,
   type Pipeline,
   type Point,
+  type PortRole,
   type PortSide,
+  reaches,
   type Rect,
+  type ValidationIssue,
+  validatePipeline,
 } from '@tsai-pe/shared/models';
 import { boundsOf, edgePath, nodeRect, portAnchor, rectsIntersect } from './geometry';
 import { routeEdge } from './routing';
@@ -57,6 +61,8 @@ export class BoardStore {
   private readonly _edges = signal<readonly Edge[]>([]);
   private readonly _selection = signal<ReadonlySet<string>>(new Set());
   private seq = 0;
+  private id = 'pipeline';
+  private name = 'Untitled pipeline';
 
   private undoStack: Snapshot[] = [];
   private redoStack: Snapshot[] = [];
@@ -116,7 +122,24 @@ export class BoardStore {
     boundsOf(this._nodes().map(nodeRect)),
   );
 
+  /** Live structural validation of the current graph. */
+  readonly issues: Signal<ValidationIssue[]> = computed(() =>
+    validatePipeline(this.toPipeline()),
+  );
+
+  /** Serialize the current board back into a plain pipeline document. */
+  toPipeline(): Pipeline {
+    return {
+      id: this.id,
+      name: this.name,
+      nodes: [...this._nodes()],
+      edges: [...this._edges()],
+    };
+  }
+
   load(pipeline: Pipeline): void {
+    this.id = pipeline.id;
+    this.name = pipeline.name;
     this._nodes.set(pipeline.nodes);
     this._edges.set(pipeline.edges);
     this._selection.set(new Set());
@@ -206,14 +229,45 @@ export class BoardStore {
     });
   }
 
-  /** Connect an output port to an input port (idempotent, 1:1). */
+  /**
+   * Whether a connection from `source` to `target` is valid: output → input,
+   * distinct nodes, and it must not introduce a cycle.
+   */
+  canConnect(source: EdgeEnd, target: EdgeEnd): boolean {
+    if (source.nodeId === target.nodeId) return false;
+    if (this.roleOf(source) !== 'output' || this.roleOf(target) !== 'input') {
+      return false;
+    }
+    // Adding source→target closes a cycle iff target already reaches source.
+    return !reaches(this._edges(), target.nodeId, source.nodeId);
+  }
+
+  /**
+   * Connect an output port to an input port. Rejects invalid/cyclic links and,
+   * since inputs are 1:1, replaces any existing connection into the same input.
+   */
   connect(source: EdgeEnd, target: EdgeEnd): void {
-    if (source.nodeId === target.nodeId) return;
+    if (!this.canConnect(source, target)) return;
     const id = `edge-${source.nodeId}.${source.portId}~${target.nodeId}.${target.portId}`;
     if (this._edges().some((e) => e.id === id)) return;
     this.record();
-    this._edges.update((edges) => [...edges, { id, source, target }]);
+    this._edges.update((edges) => [
+      ...edges.filter(
+        (e) =>
+          !(
+            e.target.nodeId === target.nodeId &&
+            e.target.portId === target.portId
+          ),
+      ),
+      { id, source, target },
+    ]);
     this.select(id);
+  }
+
+  private roleOf(end: EdgeEnd): PortRole | undefined {
+    return this._nodes()
+      .find((n) => n.id === end.nodeId)
+      ?.ports.find((p) => p.id === end.portId)?.role;
   }
 
   removeEdge(id: string): void {
