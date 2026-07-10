@@ -47,6 +47,17 @@
             edge.selected ? 'url(#pe-arrow-active)' : 'url(#pe-arrow)'
           "
         ></path>
+        @if (edge.midLabel; as ml) {
+          <text
+            class="fill-[var(--text-2)] stroke-[var(--canvas-bg)] [stroke-width:3] [paint-order:stroke] text-[10px] font-medium [pointer-events:none] select-none"
+            text-anchor="middle"
+            dominant-baseline="central"
+            [attr.x]="edge.mid.x"
+            [attr.y]="edge.mid.y"
+          >
+            {{ ml }}
+          </text>
+        }
       </g>
     }
     @if (draftPath(); as d) {

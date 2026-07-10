@@ -103,6 +103,12 @@ const CAT_PIPELINE: Pipeline = {
   ],
 };
 
+// Label the merge node's fan-out ports so their connections show branch names.
+for (const p of CAT_PIPELINE.nodes.find((n) => n.id === 'node-5')?.ports ?? []) {
+  if (p.id === 'out-top') p.label = 'primary';
+  if (p.id === 'out-bottom') p.label = 'fallback';
+}
+
 /** A 1:1 connection from a node's output port onto the next node's input. */
 function edge(id: string, from: string, fromPort: string, to: string) {
   return {

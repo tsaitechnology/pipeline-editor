@@ -38,9 +38,13 @@ export interface EdgeGeometry {
   path: string;
   from: Point;
   to: Point;
+  /** Midpoint of the endpoints — anchor for a visible branch label. */
+  mid: Point;
   selected: boolean;
   /** "Source → Target" label for tooltips. */
   label: string;
+  /** Visible mid-edge label (e.g. a control-flow branch name), if the source port has one. */
+  midLabel?: string;
 }
 
 /** A port located near a world point (for magnet snapping). */
@@ -121,8 +125,13 @@ export class BoardStore {
         path,
         from: from.point,
         to: to.point,
+        mid: {
+          x: (from.point.x + to.point.x) / 2,
+          y: (from.point.y + to.point.y) / 2,
+        },
         selected: selected.has(edge.id),
         label: `${byId.get(edge.source.nodeId)?.title ?? '?'} → ${byId.get(edge.target.nodeId)?.title ?? '?'}`,
+        midLabel: from.label,
       });
     }
     return result;
@@ -435,10 +444,10 @@ export class BoardStore {
     byId: Map<string, BoardNode>,
     nodeId: string,
     portId: string,
-  ): { point: Point; side: PortSide } | undefined {
+  ): { point: Point; side: PortSide; label?: string } | undefined {
     const node = byId.get(nodeId);
     const port: NodePort | undefined = node?.ports.find((p) => p.id === portId);
     if (!node || !port) return undefined;
-    return { point: portAnchor(node, port), side: port.side };
+    return { point: portAnchor(node, port), side: port.side, label: port.label };
   }
 }

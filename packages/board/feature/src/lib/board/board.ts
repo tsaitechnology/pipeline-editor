@@ -116,6 +116,8 @@ interface ContextMenu {
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     tabindex: '0',
+    role: 'application',
+    'aria-label': 'Pipeline board editor',
     class:
       'relative block w-full h-full overflow-hidden bg-[var(--canvas-bg)] touch-none select-none outline-none',
     '(pointerdown)': 'onPointerDown($event)',
@@ -486,6 +488,17 @@ export class Board {
         this.spaceHeld = true;
         event.preventDefault(); // don't scroll the page
         break;
+      case 'Tab':
+        event.preventDefault();
+        this.cycleSelection(event.shiftKey ? -1 : 1);
+        break;
+      case 'Enter': {
+        const sel = [...this.store.selection()];
+        if (sel.length === 1 && this.store.nodes().some((n) => n.id === sel[0])) {
+          this.openInspector(sel[0]);
+        }
+        break;
+      }
       case 'ArrowUp':
         if (ro) break;
         event.preventDefault();
@@ -511,6 +524,42 @@ export class Board {
 
   protected onKeyUp(event: KeyboardEvent): void {
     if (event.key === ' ') this.spaceHeld = false;
+  }
+
+  /** Move the selection to the next/previous node (keyboard navigation). */
+  private cycleSelection(dir: 1 | -1): void {
+    const nodes = this.store.nodes();
+    if (!nodes.length) return;
+    const sel = [...this.store.selection()];
+    const current = nodes.findIndex((n) => n.id === sel[sel.length - 1]);
+    const next = nodes[(current + dir + nodes.length) % nodes.length];
+    this.store.select(next.id);
+    this.ensureVisible(next.id);
+  }
+
+  /** Pan so a node is comfortably within view (used by keyboard navigation). */
+  private ensureVisible(nodeId: string): void {
+    const node = this.store.nodes().find((n) => n.id === nodeId);
+    if (!node) return;
+    const r = nodeRect(node);
+    const vp = this.store.viewport;
+    const tl = vp.screenToBoard({ x: 0, y: 0 });
+    const size = this.size();
+    const br = vp.screenToBoard({ x: size.width, y: size.height });
+    const margin = 40 / vp.zoom();
+    if (
+      r.x >= tl.x + margin &&
+      r.y >= tl.y + margin &&
+      r.x + r.width <= br.x - margin &&
+      r.y + r.height <= br.y - margin
+    ) {
+      return; // already visible
+    }
+    const zoom = vp.zoom();
+    vp.setPan({
+      x: size.width / 2 - (r.x + r.width / 2) * zoom,
+      y: size.height / 2 - (r.y + r.height / 2) * zoom,
+    });
   }
 
   protected undo(): void {

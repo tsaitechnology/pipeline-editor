@@ -24,7 +24,5 @@ Actionable, not-yet-done work only. No history.
 
 ## board — UI-layer prep (next)
 
-- [ ] Edge labels (control-flow branch names, e.g. then / else).
 - [ ] Node resize + auto-size to content / ports.
-- [ ] Keyboard node navigation + `aria` on the canvas.
 - [ ] Manual reroute waypoints on edges (over the auto A* routing).
