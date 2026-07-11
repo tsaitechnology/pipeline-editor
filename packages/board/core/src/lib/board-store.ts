@@ -402,24 +402,17 @@ export class BoardStore {
   }
 
   /**
-   * Connect an output port to an input port. Rejects invalid/cyclic links and,
-   * since inputs are 1:1, replaces any existing connection into the same input.
+   * Connect an output port to an input port. Rejects invalid/cyclic links and
+   * exact duplicates. Inputs accept **multiple** incoming connections (fan-in,
+   * OR semantics): distinct sources — e.g. several triggers — can converge on one
+   * node, which runs when any of them delivers.
    */
   connect(source: EdgeEnd, target: EdgeEnd): void {
     if (!this.canConnect(source, target)) return;
     const id = `edge-${source.nodeId}.${source.portId}~${target.nodeId}.${target.portId}`;
     if (this._edges().some((e) => e.id === id)) return;
     this.record();
-    this._edges.update((edges) => [
-      ...edges.filter(
-        (e) =>
-          !(
-            e.target.nodeId === target.nodeId &&
-            e.target.portId === target.portId
-          ),
-      ),
-      { id, source, target },
-    ]);
+    this._edges.update((edges) => [...edges, { id, source, target }]);
     this.select(id);
   }
 

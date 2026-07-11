@@ -16,9 +16,11 @@ export interface ValidationIssue {
  * Validate a pipeline's structural integrity:
  * - every edge references existing nodes and ports;
  * - edges run output → input (port role compatibility);
- * - each input port has at most one incoming connection;
  * - the graph is acyclic (a pipeline is a DAG);
  * - disconnected nodes are flagged as a warning.
+ *
+ * Inputs may receive **multiple** incoming connections (fan-in / OR): distinct
+ * sources — e.g. several triggers — can converge on one node.
  */
 export function validatePipeline(pipeline: Pipeline): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
@@ -26,8 +28,6 @@ export function validatePipeline(pipeline: Pipeline): ValidationIssue[] {
 
   const roleOf = (nodeId: string, portId: string): PortRole | undefined =>
     byId.get(nodeId)?.ports.find((p) => p.id === portId)?.role;
-
-  const incoming = new Map<string, number>();
 
   for (const edge of pipeline.edges) {
     const source = byId.get(edge.source.nodeId);
@@ -55,19 +55,6 @@ export function validatePipeline(pipeline: Pipeline): ValidationIssue[] {
         code: 'bad-target-port',
         message: `Connection must end at an input port`,
         edgeId: edge.id,
-      });
-    }
-    const key = `${edge.target.nodeId}.${edge.target.portId}`;
-    incoming.set(key, (incoming.get(key) ?? 0) + 1);
-  }
-
-  for (const [key, count] of incoming) {
-    if (count > 1) {
-      issues.push({
-        severity: 'error',
-        code: 'multiple-inputs',
-        message: `An input port has ${count} incoming connections (max 1)`,
-        nodeId: key.split('.')[0],
       });
     }
   }

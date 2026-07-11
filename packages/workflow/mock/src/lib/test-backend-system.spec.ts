@@ -128,6 +128,19 @@ describe('TestBackendSystem — happy path', () => {
     expect(snap.nodes['a'].output).toBeDefined();
   });
 
+  it('runs a node fed by multiple triggers (fan-in / converging entry points)', async () => {
+    const p = pipeline(
+      [trigger('telegram'), trigger('slack'), action('handle'), effect('reply')],
+      [edge('telegram', 'handle'), edge('slack', 'handle'), edge('handle', 'reply')],
+    );
+    const snap = await runToEnd(fast(), p);
+    expect(snap.status).toBe('success');
+    expect(snap.nodes['telegram'].status).toBe('success');
+    expect(snap.nodes['slack'].status).toBe('success');
+    expect(snap.nodes['handle'].status).toBe('success');
+    expect(snap.nodes['reply'].status).toBe('success');
+  });
+
   it('fires the observer immediately with current state', () => {
     const sys = fast();
     const runId = sys.startRun(pipeline([trigger('t')], []));

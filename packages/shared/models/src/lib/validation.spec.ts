@@ -73,14 +73,12 @@ describe('validatePipeline', () => {
     expect(codes(validatePipeline(p))).toContain('bad-target-port');
   });
 
-  it('flags an input port with more than one incoming connection', () => {
+  it('allows fan-in — multiple sources into one input is not an error', () => {
     const p = pipeline(
       [node('a'), node('b'), node('c')],
       [edge('e1', 'a', 'c'), edge('e2', 'b', 'c')],
     );
-    const issue = validatePipeline(p).find((i) => i.code === 'multiple-inputs');
-    expect(issue).toBeDefined();
-    expect(issue?.nodeId).toBe('c');
+    expect(validatePipeline(p)).toEqual([]);
   });
 
   it('flags a cycle', () => {

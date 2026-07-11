@@ -73,15 +73,24 @@ describe('BoardStore — connections', () => {
     expect(store.edges()).toHaveLength(1);
   });
 
-  it('enforces 1:1 inputs — a new edge replaces an existing one into the same port', () => {
+  it('accepts fan-in — multiple sources can converge on one input', () => {
     const store = new BoardStore();
     const a = store.addNode(action('A', 0, 0));
     const b = store.addNode(action('B', 0, 4));
     const c = store.addNode(action('C', 6, 2));
     store.connect({ nodeId: a, portId: 'out-right' }, { nodeId: c, portId: 'in' });
     store.connect({ nodeId: b, portId: 'out-right' }, { nodeId: c, portId: 'in' });
+    expect(store.edges()).toHaveLength(2);
+    expect(store.edges().map((e) => e.source.nodeId).sort()).toEqual(
+      [a, b].sort(),
+    );
+  });
+
+  it('still rejects an exact duplicate connection', () => {
+    const { store, a, b } = twoNodes();
+    store.connect({ nodeId: a, portId: 'out-right' }, { nodeId: b, portId: 'in' });
+    store.connect({ nodeId: a, portId: 'out-right' }, { nodeId: b, portId: 'in' });
     expect(store.edges()).toHaveLength(1);
-    expect(store.edges()[0].source.nodeId).toBe(b);
   });
 });
 

@@ -323,7 +323,7 @@ interface BoardNode {
   status?: NodeStatus;            // оверлей прогона
 }
 
-interface Edge { // строго 1:1
+interface Edge { // output-порт → input-порт
   id: string;
   source: { nodeId: string; portId: string }; // выход
   target: { nodeId: string; portId: string }; // вход
@@ -332,10 +332,14 @@ interface Edge { // строго 1:1
 interface Pipeline { id: string; name: string; nodes: BoardNode[]; edges: Edge[]; }
 ```
 
-**Связи строго 1:1.** `split`/`merge` — это **узлы-буферы**, а не кардинальность
-связи: `split` получает массив и раздаёт элементы, `merge` буферизует N событий в
-один `Array[N]`. Валидация (`validatePipeline` в `models`): граф — DAG (без циклов),
-связь идёт `output → input`, вход принимает ≤ 1 связи, несвязанные узлы — warning.
+**Fan-in разрешён.** Вход принимает **несколько** входящих связей (семантика OR /
+run-on-arrival): разные источники — например несколько триггеров telegram/whatsapp/
+slack — сходятся на одной ноде, которая срабатывает, когда пришло из любого. Это
+союз источников, и он ортогонален `split`/`merge` — те про кардинальность **одного**
+потока (`split` раздаёт элементы массива, `merge` буферизует N событий в `Array[N]`),
+а не про объединение разных. Валидация (`validatePipeline` в `models`): граф — DAG
+(без циклов), связь идёт `output → input`, несвязанные узлы — warning. Дубли одной и
+той же связи `connect` не создаёт.
 
 ### Реестр типов узлов — `shared/nodes`
 
