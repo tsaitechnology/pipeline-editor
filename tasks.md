@@ -17,6 +17,8 @@ Actionable, not-yet-done work only. No history.
 - [ ] Run UX polish: distinct `skipped` node state (not `idle`); show a node's
       error on the node / inspector; log timestamps + per-node filter + autoscroll;
       optional ticking progress (1→N) instead of instant n/n.
+- [ ] Delete safety: Backspace must NOT delete nodes (only the Delete key);
+      deleting a node requires a confirmation modal first.
 
 ## quality / docs
 
