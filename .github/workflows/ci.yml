@@ -19,12 +19,6 @@ jobs:
           filter: tree:0
           fetch-depth: 0
 
-      # This enables task distribution via Nx Cloud
-      # Run this command as early as possible, before dependencies are installed
-      # Learn more at https://nx.dev/docs/reference/nx-cloud-cli#npx-nxcloud-startcirun
-      - run: npx nx start-ci-run --distribute-on="3 linux-medium-js" --stop-agents-after="e2e"
-
-      # Cache node_modules
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -33,9 +27,13 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps
 
-      # Prepend any command with "nx record --" to record its logs to Nx Cloud
-      - run: npx nx record -- npx nx format:check --base="remotes/origin/main"
-      - run: npx nx run-many -t lint test build typecheck e2e
-      # Nx Cloud recommends fixes for failures to help you get CI green faster. Learn more: https://nx.dev/docs/features/ci-features/self-healing-ci
-      - run: npx nx fix-ci
-        if: always()
+      - run: npx nx format:check
+      # `test` runs the Angular-library specs (@nx/angular:unit-test); `vite:test`
+      # the framework-free libs (@nx/vite). Both are needed to cover all units.
+      - run: npx nx run-many -t lint typecheck test vite:test build e2e
+
+  # NOTE: Nx Cloud distributed task execution (`nx start-ci-run --distribute-on`)
+  # was removed — it needs provisioned agents and was the source of intermittent
+  # "Cannot read properties of undefined (reading 'metadata')" failures. Remote
+  # caching still works via `nxCloudId` + the NX_CLOUD_ACCESS_TOKEN secret. Re-add
+  # distribution once agents are set up.
