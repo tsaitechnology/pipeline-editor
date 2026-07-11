@@ -234,6 +234,15 @@ In-browser мок «системы», реализующий `PipelineBackend`. 
 Реальный REST/WS-адаптер — просто другая реализация того же порта; редактор его не
 отличает. Инжектится в `<pe-board>` через `PIPELINE_BACKEND`.
 
+### Персистентность — порт `PipelineStore`
+
+Отдельный от прогона порт (`shared/models/store.ts`): `save` / `load` / `list` /
+`remove` пайплайнов + `runHistory`. **Async** (Promise-based) — персистентность
+удалённа по природе (в отличие от sync-порта прогона). `InMemoryPipelineStore`
+(`workflow/mock`) — in-browser реализация: хранит документы с deep-clone на входе и
+выходе, так что состояние стора нельзя мутировать по ссылке. Реальный REST-стор —
+другая реализация того же порта.
+
 ### `workflow/http` — `RestWsBackend` (type:core)
 
 Скелет реальной реализации порта: команды по **REST** (`POST /runs`,

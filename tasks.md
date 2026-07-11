@@ -4,11 +4,14 @@ Actionable, not-yet-done work only. No history.
 
 ## board / workflow — next
 
-- [ ] Backend contract maturity (beyond run lifecycle): persistence (save / load /
-      list pipelines, run history), node catalog supplied by the backend,
-      credentials/secrets model, validation from the backend. Also reconsider the
-      sync `startRun(): string` — the REST adapter has to mint a local id and
-      reconcile the server id async; an async `startRun` would drop that seam.
+- [ ] Wire persistence into the editor: `PipelineStore` + `InMemoryPipelineStore`
+      exist (save / load / list / remove / runHistory) — now add the editor UI
+      (open / save / list, run-history view) and a real REST store.
+- [ ] Backend contract maturity (rest of it): node catalog supplied by the backend
+      (replaces the seed `NODE_CATALOG`), credentials/secrets model, validation
+      from the backend. Also reconsider the sync `startRun(): string` — the REST
+      adapter has to mint a local id and reconcile the server id async; an async
+      `startRun` would drop that seam.
 
 ## ui-kit
 
