@@ -982,17 +982,22 @@ export class Board {
     return output === undefined ? [] : variablePaths(output);
   }
 
-  /** An n8n-style reference to an upstream node, optionally to a variable path. */
-  private contextRef(title: string, path?: string): string {
+  /**
+   * An upstream reference, optionally to a variable path. Control-flow conditions
+   * are pure expressions, so `template: false` inserts a bare `$node[...]`; string
+   * params use `{{ … }}` template syntax.
+   */
+  private contextRef(title: string, path: string | undefined, template: boolean): string {
     const accessor = !path ? '' : path.startsWith('[') ? path : `.${path}`;
-    return `{{ $node["${title}"]${accessor} }}`;
+    const ref = `$node["${title}"]${accessor}`;
+    return template ? `{{ ${ref} }}` : ref;
   }
 
-  /** Append an upstream reference (node, or a variable path) to the config. */
+  /** Append an upstream reference (bare — control-flow is a pure expression). */
   protected insertContext(node: BoardNode, path?: string): void {
     const c = this.inspectNode()?.config;
     if (!c) return;
-    const ref = this.contextRef(node.title, path);
+    const ref = this.contextRef(node.title, path, false);
     if (c.type === 'switch') {
       this.setConfig({ ...c, discriminant: `${c.discriminant} ${ref}`.trim() });
     } else {
@@ -1028,7 +1033,7 @@ export class Board {
 
   protected insertParamContext(key: string, node: BoardNode, path?: string): void {
     const current = String(this.inspectNode()?.data?.[key] ?? '');
-    const ref = this.contextRef(node.title, path);
+    const ref = this.contextRef(node.title, path, true);
     this.patchParam(key, `${current} ${ref}`.trim());
   }
 

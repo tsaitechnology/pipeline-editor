@@ -639,7 +639,7 @@
                       <button
                         type="button"
                         class="px-2 py-0.5 font-mono text-[11px] rounded-full border border-[var(--border)] text-[var(--accent)] cursor-pointer hover:bg-[var(--surface-3)]"
-                        [title]="'Insert ' + cn.title + '.' + p + ' from the last run'"
+                        [title]="'Insert ' + cn.title + '.' + p"
                         (click)="insertParamContext(f.key, cn, p)"
                       >
                         .{{ p }}
@@ -800,7 +800,7 @@
                 <button
                   type="button"
                   class="px-2 py-1 font-mono text-[11px] rounded-full border border-[var(--border)] text-[var(--accent)] cursor-pointer hover:bg-[var(--surface-3)] disabled:opacity-50"
-                  [title]="'Insert ' + cn.title + '.' + p + ' from the last run'"
+                  [title]="'Insert ' + cn.title + '.' + p"
                   [disabled]="readonly()"
                   (click)="insertContext(cn, p)"
                 >

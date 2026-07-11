@@ -1,5 +1,6 @@
 import {
   type BoardNode,
+  type Edge,
   type NodeRun,
   type NodeStatus,
   type Pipeline,
@@ -14,7 +15,19 @@ import {
   catalogEntry,
   controlFlowOutputs,
   isControlFlow,
+  paramSchema,
 } from '@tsai-pe/shared/nodes';
+import {
+  coerceExpression,
+  type EvalContext,
+  looseEquals,
+  resolveTemplate,
+  truthy,
+  tryEvaluate,
+} from './expression';
+
+/** Sentinel branch id that matches no port — routes nowhere (skips downstream). */
+const BRANCH_NONE = '__none__';
 
 /** Internal, mutable bookkeeping for one in-flight (or finished) run. */
 interface RunState {
@@ -30,6 +43,11 @@ interface RunState {
   outputs: Record<string, unknown>;
   /** For control-flow nodes: the output port id the branch resolved to. */
   selected: Record<string, string>;
+  /**
+   * Which trigger "fired" this run (one event enters from one channel). Other
+   * triggers are skipped, so downstream routing reflects the firing source.
+   */
+  firingTriggerId?: string;
   /**
    * Fan-out factor a node *emits* downstream: split multiplies it by the item
    * count, merge collapses it back to 1, everything else passes it through. A
@@ -57,6 +75,12 @@ export interface TestBackendOptions {
    * jumping straight to n/n. Off by default (instant).
    */
   tickProgressMs?: number;
+  /**
+   * Which trigger fires this run. A pipeline may have several triggers, but one
+   * event enters from one channel; the rest are skipped. By id, or a picker given
+   * the trigger nodes + run index (default: round-robin across runs).
+   */
+  firingTrigger?: string | ((triggers: BoardNode[], runIndex: number) => string);
 }
 
 /**
@@ -80,12 +104,31 @@ export class TestBackendSystem implements PipelineBackend {
   ) => string | undefined | false;
   private readonly now: () => number;
   private readonly tickProgressMs: number;
+  private readonly firingTrigger:
+    | string
+    | ((triggers: BoardNode[], runIndex: number) => string)
+    | undefined;
 
   constructor(options: TestBackendOptions = {}) {
     this.stepDelayMs = options.stepDelayMs ?? 400;
     this.failNode = options.failNode ?? (() => undefined);
     this.now = options.now ?? (() => Date.now());
     this.tickProgressMs = options.tickProgressMs ?? 0;
+    this.firingTrigger = options.firingTrigger;
+  }
+
+  /** Choose which trigger fires this run (see {@link TestBackendOptions.firingTrigger}). */
+  private pickFiringTrigger(
+    pipeline: Pipeline,
+    runIndex: number,
+  ): string | undefined {
+    const triggers = pipeline.nodes.filter((n) => n.kind === 'trigger');
+    if (!triggers.length) return undefined;
+    if (typeof this.firingTrigger === 'string') return this.firingTrigger;
+    if (typeof this.firingTrigger === 'function') {
+      return this.firingTrigger(triggers, runIndex);
+    }
+    return triggers[runIndex % triggers.length].id; // round-robin by run
   }
 
   startRun(pipeline: Pipeline): string {
@@ -106,10 +149,13 @@ export class TestBackendSystem implements PipelineBackend {
       outputs: {},
       selected: {},
       outFan: {},
+      firingTriggerId: this.pickFiringTrigger(pipeline, this.seq - 1),
     };
     this.runs.set(runId, run);
 
     this.log(run, `Run ${runId} accepted for "${pipeline.name}".`);
+    const firing = pipeline.nodes.find((n) => n.id === run.firingTriggerId);
+    if (firing) this.log(run, `Firing trigger: "${firing.title}".`, firing.id);
 
     const order = this.topoOrder(pipeline);
     if (order === null) {
@@ -217,13 +263,32 @@ export class TestBackendSystem implements PipelineBackend {
         return;
       }
 
-      nodeRun.status = 'success';
-      if (isControlFlow(node)) this.resolveBranch(run, node);
-      const output = this.produceOutput(run, pipeline, node, nodeRun);
-      run.outputs[node.id] = output;
-      // Expose the produced output on the snapshot so the editor can show it
-      // (Run data) and derive downstream expression variable paths from it.
-      nodeRun.output = output;
+      // Evaluate the node's expressions for real. A bad reference (the upstream
+      // shape changed) throws → the node fails, like any other failure.
+      try {
+        const ctx = this.evalContext(run, pipeline, node);
+        if (isControlFlow(node)) this.resolveBranch(run, node, ctx);
+        const output = this.produceOutput(run, pipeline, node, nodeRun, ctx);
+        nodeRun.status = 'success';
+        run.outputs[node.id] = output;
+        // Expose the produced output on the snapshot so the editor can show it
+        // (Run data) and derive downstream expression variable paths from it.
+        nodeRun.output = output;
+      } catch (err) {
+        nodeRun.status = 'error';
+        nodeRun.error = `Expression error: ${errorMessage(err)}`;
+        this.log(run, `Node "${node.title}" failed: ${nodeRun.error}`, node.id);
+        const fatal = !(node.kind === 'effect' && node.required === false);
+        if (fatal) {
+          this.emit(run);
+          this.finish(run, 'error');
+          return;
+        }
+        this.log(run, `(optional — run continues)`, node.id);
+        this.emit(run);
+        this.runNextNode(run, pipeline, order, index + 1);
+        return;
+      }
 
       // Optionally animate fan-out progress 1 → N before advancing.
       const pg = nodeRun.progress;
@@ -264,26 +329,57 @@ export class TestBackendSystem implements PipelineBackend {
     node: BoardNode,
   ): boolean {
     const incoming = pipeline.edges.filter((e) => e.target.nodeId === node.id);
-    if (!incoming.length) return true; // a root (trigger)
-    return incoming.some((e) => {
-      if (run.nodes[e.source.nodeId]?.status !== 'success') return false;
-      const selected = run.selected[e.source.nodeId];
-      // Non-branching source: always taken. Branching: only the selected port.
-      return selected === undefined || e.source.portId === selected;
-    });
+    if (!incoming.length) {
+      // A root: triggers fire only if they're the firing one this run.
+      if (node.kind === 'trigger' && run.firingTriggerId !== undefined) {
+        return node.id === run.firingTriggerId;
+      }
+      return true;
+    }
+    // Fan-in / OR: run if any incoming edge is active (source succeeded on a
+    // taken branch).
+    return incoming.some((e) => this.edgeActive(run, e));
   }
 
-  /** Pick the mock branch a control-flow node routes to, and log it. */
-  private resolveBranch(run: RunState, node: BoardNode): void {
+  /** Whether an edge is "live": its source succeeded on a taken branch. */
+  private edgeActive(run: RunState, edge: Edge): boolean {
+    if (run.nodes[edge.source.nodeId]?.status !== 'success') return false;
+    const selected = run.selected[edge.source.nodeId];
+    // Non-branching source: always taken. Branching: only the selected port.
+    return selected === undefined || edge.source.portId === selected;
+  }
+
+  /**
+   * Evaluate a control-flow node's condition against context and pick the branch
+   * it actually routes to (may throw on a bad reference → the node fails).
+   */
+  private resolveBranch(run: RunState, node: BoardNode, ctx: EvalContext): void {
     if (!isControlFlow(node) || !node.config) return;
     const config = node.config;
     let portId: string;
-    if (config.type === 'if') portId = 'true';
-    else if (config.type === 'filter') portId = 'pass';
-    else portId = config.cases.length ? `case-${config.cases[0].id}` : 'default';
+    if (config.type === 'if') {
+      portId = truthy(coerceExpression(config.expression, ctx)) ? 'true' : 'false';
+    } else if (config.type === 'filter') {
+      portId = truthy(coerceExpression(config.expression, ctx))
+        ? 'pass'
+        : BRANCH_NONE;
+    } else {
+      const discriminant = coerceExpression(config.discriminant, ctx);
+      const hit = config.cases.find((c) =>
+        looseEquals(discriminant, caseValue(c.value, ctx)),
+      );
+      portId = hit
+        ? `case-${hit.id}`
+        : config.hasDefault
+          ? 'default'
+          : BRANCH_NONE;
+    }
     run.selected[node.id] = portId;
     const label =
-      controlFlowOutputs(config).find((o) => o.id === portId)?.label ?? portId;
+      portId === BRANCH_NONE
+        ? 'no branch'
+        : (controlFlowOutputs(config).find((o) => o.id === portId)?.label ??
+          portId);
     this.log(run, `"${node.title}" → ${label}`, node.id);
   }
 
@@ -300,6 +396,7 @@ export class TestBackendSystem implements PipelineBackend {
     pipeline: Pipeline,
     node: BoardNode,
     nodeRun: NodeRun,
+    ctx: EvalContext,
   ): unknown {
     const upstream = pipeline.edges
       .filter((e) => e.target.nodeId === node.id)
@@ -337,23 +434,79 @@ export class TestBackendSystem implements PipelineBackend {
       nodeRun.progress = { done: inFan, total: inFan };
       this.log(run, `"${node.title}" ×${inFan}`, node.id);
     }
-    if (node.kind === 'effect') return { acknowledged: true };
+    if (node.kind === 'effect') return this.effectOutput(node, ctx);
     if (node.category === 'control-flow') {
       return { branch: run.selected[node.id] };
     }
+    if (node.category === 'transform') return this.transformOutput(node, ctx);
     return { ok: true, count };
+  }
+
+  /**
+   * Transform output. `set-fields` evaluates its value expression and merges it
+   * into the (unified) input under the chosen field — the normalization step.
+   * Other transforms pass the merged input through.
+   */
+  private transformOutput(node: BoardNode, ctx: EvalContext): unknown {
+    const base =
+      ctx.json && typeof ctx.json === 'object' && !Array.isArray(ctx.json)
+        ? { ...(ctx.json as Record<string, unknown>) }
+        : {};
+    if (node.type === 'set-fields') {
+      const field = String(node.data?.['field'] ?? 'value');
+      const value = resolveTemplate(String(node.data?.['value'] ?? ''), ctx);
+      return { ...base, [field]: value };
+    }
+    return Object.keys(base).length ? base : { value: ctx.json };
+  }
+
+  /** Effect output: resolve its expression params so the run shows what it sent. */
+  private effectOutput(node: BoardNode, ctx: EvalContext): unknown {
+    const out: Record<string, unknown> = { acknowledged: true };
+    for (const param of paramSchema(node)) {
+      const raw = node.data?.[param.key];
+      if (param.type === 'expression' && typeof raw === 'string' && raw) {
+        out[param.key] = resolveTemplate(raw, ctx);
+      }
+    }
+    return out;
   }
 
   /** How many times a node runs: the fan its active upstream emits (≥ 1). */
   private inFanOf(run: RunState, pipeline: Pipeline, node: BoardNode): number {
-    const active = pipeline.edges.filter((e) => {
-      if (e.target.nodeId !== node.id) return false;
-      if (run.nodes[e.source.nodeId]?.status !== 'success') return false;
-      const selected = run.selected[e.source.nodeId];
-      return selected === undefined || e.source.portId === selected;
-    });
+    const active = pipeline.edges.filter(
+      (e) => e.target.nodeId === node.id && this.edgeActive(run, e),
+    );
     if (!active.length) return 1;
     return Math.max(...active.map((e) => run.outFan[e.source.nodeId] ?? 1));
+  }
+
+  /**
+   * The expression context for a node: `$json` is its merged live-upstream
+   * output, `$node["Title"]` resolves to another node's output.
+   */
+  private evalContext(
+    run: RunState,
+    pipeline: Pipeline,
+    node: BoardNode,
+  ): EvalContext {
+    const inputs = pipeline.edges
+      .filter((e) => e.target.nodeId === node.id && this.edgeActive(run, e))
+      .map((e) => run.outputs[e.source.nodeId]);
+    const objects = inputs.filter(
+      (o): o is Record<string, unknown> =>
+        !!o && typeof o === 'object' && !Array.isArray(o),
+    );
+    const json = objects.length
+      ? Object.assign({}, ...objects)
+      : inputs[0];
+    return {
+      json,
+      node: (title) => {
+        const found = pipeline.nodes.find((n) => n.title === title);
+        return found ? run.outputs[found.id] : undefined;
+      },
+    };
   }
 
   /** Best-effort item count from upstream outputs (for split/merge). */
@@ -468,4 +621,15 @@ export class TestBackendSystem implements PipelineBackend {
     const snapshot = this.snapshot(run);
     for (const listener of run.listeners) listener(snapshot);
   }
+}
+
+/** Resolve a switch case's comparison value (template, expression, or literal). */
+function caseValue(raw: string, ctx: EvalContext): unknown {
+  if (raw.includes('{{')) return resolveTemplate(raw, ctx);
+  const value = tryEvaluate(raw, ctx);
+  return value === undefined ? raw : value; // bare word → literal string
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }

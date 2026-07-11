@@ -50,7 +50,7 @@ function ifNode(id: string): BoardNode {
     pos: { col: 0, row: 0 },
     size: { cols: 4, rows: 3 },
     ports,
-    config: { type: 'if', expression: 'x > 0' },
+    config: { type: 'if', expression: '$json.count > 5' },
   };
 }
 
@@ -128,16 +128,17 @@ describe('TestBackendSystem — happy path', () => {
     expect(snap.nodes['a'].output).toBeDefined();
   });
 
-  it('runs a node fed by multiple triggers (fan-in / converging entry points)', async () => {
+  it('fans in multiple triggers — one fires, converging node still runs', async () => {
     const p = pipeline(
       [trigger('telegram'), trigger('slack'), action('handle'), effect('reply')],
       [edge('telegram', 'handle'), edge('slack', 'handle'), edge('handle', 'reply')],
     );
+    // Round-robin firing picks the first trigger on a fresh instance.
     const snap = await runToEnd(fast(), p);
     expect(snap.status).toBe('success');
     expect(snap.nodes['telegram'].status).toBe('success');
-    expect(snap.nodes['slack'].status).toBe('success');
-    expect(snap.nodes['handle'].status).toBe('success');
+    expect(snap.nodes['slack'].status).toBe('skipped'); // not the firing trigger
+    expect(snap.nodes['handle'].status).toBe('success'); // fan-in still delivers
     expect(snap.nodes['reply'].status).toBe('success');
   });
 
@@ -219,6 +220,97 @@ describe('TestBackendSystem — control-flow branching', () => {
     expect(snap.log.some((l) => /not on the taken path/i.test(l.message))).toBe(
       true,
     );
+  });
+});
+
+describe('TestBackendSystem — smart evaluation', () => {
+  /** A switch node routing on `$json.source`, one output port per case. */
+  function switchOnSource(
+    id: string,
+    cases: { id: string; value: string }[],
+  ): BoardNode {
+    return {
+      id,
+      kind: 'action',
+      category: 'control-flow',
+      title: id,
+      pos: { col: 0, row: 0 },
+      size: { cols: 4, rows: 3 },
+      ports: [
+        { id: 'in', role: 'input', side: 'left' },
+        ...cases.map((c) => ({
+          id: `case-${c.id}`,
+          role: 'output' as const,
+          side: 'right' as const,
+        })),
+      ],
+      config: {
+        type: 'switch',
+        discriminant: '$json.source',
+        cases: cases.map((c) => ({ id: c.id, label: c.id, value: c.value })),
+        hasDefault: false,
+      },
+    };
+  }
+
+  it('routes a switch to the branch matching the evaluated discriminant', async () => {
+    const tg: BoardNode = { ...trigger('tg'), type: 'telegram-trigger' };
+    const norm: BoardNode = {
+      ...action('norm'),
+      type: 'set-fields',
+      data: { field: 'message', value: '{{ $json.message }}' },
+    };
+    const sw = switchOnSource('sw', [
+      { id: 'tg', value: 'telegram' },
+      { id: 'sl', value: 'slack' },
+    ]);
+    const p = pipeline(
+      [tg, norm, sw, effect('replyTg'), effect('replySl')],
+      [
+        edge('tg', 'norm'),
+        edge('norm', 'sw'),
+        edge('sw', 'replyTg', 'case-tg'),
+        edge('sw', 'replySl', 'case-sl'),
+      ],
+    );
+    const snap = await runToEnd(fast(), p);
+    expect(snap.status).toBe('success');
+    // source is 'telegram' → the telegram branch runs, the slack one is skipped
+    expect(snap.nodes['replyTg'].status).toBe('success');
+    expect(snap.nodes['replySl'].status).toBe('skipped');
+    // the normalize step actually extracted the message from context
+    expect(snap.nodes['norm'].output).toMatchObject({
+      source: 'telegram',
+      message: 'Hello from Telegram',
+    });
+  });
+
+  it('fails a node when an expression reads into a missing path (shape changed)', async () => {
+    const wa: BoardNode = { ...trigger('wa'), type: 'whatsapp-trigger' };
+    const bad: BoardNode = {
+      ...action('bad'),
+      type: 'set-fields',
+      // whatsapp emits { source, chat: { text } } — there is no `.message`
+      data: { field: 'x', value: '{{ $json.message.deep }}' },
+    };
+    const snap = await runToEnd(fast(), pipeline([wa, bad], [edge('wa', 'bad')]));
+    expect(snap.status).toBe('error');
+    expect(snap.nodes['bad'].status).toBe('error');
+    expect(snap.nodes['bad'].error).toMatch(/Expression error/);
+  });
+
+  it('resolves an effect’s expression params so the run shows what it sent', async () => {
+    const tg: BoardNode = { ...trigger('tg'), type: 'telegram-trigger' };
+    const send: BoardNode = {
+      ...effect('send'),
+      type: 'telegram-send',
+      data: { text: 'Echo: {{ $json.message }}' },
+    };
+    const snap = await runToEnd(fast(), pipeline([tg, send], [edge('tg', 'send')]));
+    expect(snap.status).toBe('success');
+    expect(snap.nodes['send'].output).toMatchObject({
+      text: 'Echo: Hello from Telegram',
+    });
   });
 });
 
