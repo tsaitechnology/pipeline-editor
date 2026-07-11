@@ -10,7 +10,11 @@ import {
   type RunStatus,
   type Unsubscribe,
 } from '@tsai-pe/shared/models';
-import { controlFlowOutputs, isControlFlow } from '@tsai-pe/shared/nodes';
+import {
+  catalogEntry,
+  controlFlowOutputs,
+  isControlFlow,
+} from '@tsai-pe/shared/nodes';
 
 /** Internal, mutable bookkeeping for one in-flight (or finished) run. */
 interface RunState {
@@ -305,7 +309,12 @@ export class TestBackendSystem implements PipelineBackend {
 
     if (node.kind === 'trigger') {
       run.outFan[node.id] = 1;
-      return { count: 10, source: 'telegram' };
+      // Each trigger type emits its own message shape (from the catalog), so
+      // downstream transforms have distinct context variables to normalize.
+      const sample = catalogEntry(node.type)?.output;
+      return sample
+        ? (JSON.parse(JSON.stringify(sample)) as Record<string, unknown>)
+        : { count: 10, source: 'telegram' };
     }
 
     if (node.category === 'split') {

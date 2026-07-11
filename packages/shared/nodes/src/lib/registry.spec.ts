@@ -8,6 +8,7 @@ import {
   NODE_CATALOG,
   paramSchema,
 } from './registry';
+import { variablePaths } from './variables';
 
 /** Minimal control-flow node fixture. */
 function cfNode(config: ControlFlowConfig): BoardNode {
@@ -176,5 +177,17 @@ describe('NODE_CATALOG', () => {
     for (const spec of NODE_CATALOG) {
       if (spec.kind === 'action') expect(spec.category).toBeDefined();
     }
+  });
+
+  it('gives messaging triggers distinct output shapes for expression help', () => {
+    expect(variablePaths(catalogEntry('telegram-trigger')?.output)).toContain(
+      'message',
+    );
+    expect(variablePaths(catalogEntry('whatsapp-trigger')?.output)).toContain(
+      'chat.text',
+    );
+    expect(variablePaths(catalogEntry('slack-trigger')?.output)).toContain(
+      'event.text',
+    );
   });
 });

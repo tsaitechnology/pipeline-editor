@@ -975,7 +975,10 @@ export class Board {
    * has output for it (then the editor only offers the bare node reference).
    */
   protected varPaths(node: BoardNode): string[] {
-    const output = this.run()?.nodes[node.id]?.output;
+    // Prefer the node's real run output; before a run, fall back to the catalog's
+    // illustrative output shape so variables are offered while building.
+    const output =
+      this.run()?.nodes[node.id]?.output ?? catalogEntry(node.type)?.output;
     return output === undefined ? [] : variablePaths(output);
   }
 

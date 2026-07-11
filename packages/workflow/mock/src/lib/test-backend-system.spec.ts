@@ -141,6 +141,15 @@ describe('TestBackendSystem — happy path', () => {
     expect(snap.nodes['reply'].status).toBe('success');
   });
 
+  it("emits a typed trigger's catalog message shape as its output", async () => {
+    const tg: BoardNode = { ...trigger('tg'), type: 'telegram-trigger' };
+    const snap = await runToEnd(fast(), pipeline([tg], []));
+    expect(snap.nodes['tg'].output).toMatchObject({
+      source: 'telegram',
+      message: expect.any(String),
+    });
+  });
+
   it('fires the observer immediately with current state', () => {
     const sys = fast();
     const runId = sys.startRun(pipeline([trigger('t')], []));

@@ -140,6 +140,12 @@ export interface NodeTypeSpec {
   kind: NodeKind;
   category?: ActionCategory;
   params: ParamField[];
+  /**
+   * Illustrative shape this node produces, used to seed expression help (the
+   * variable paths downstream nodes may reference) before a run and, in the mock,
+   * as a node's run output. A real backend would supply the true output schema.
+   */
+  output?: Record<string, unknown>;
 }
 
 const METHOD_OPTIONS = [
@@ -151,18 +157,38 @@ const METHOD_OPTIONS = [
 
 /** Seed node catalog. Grouped by category via `nodeType`. */
 export const NODE_CATALOG: NodeTypeSpec[] = [
-  // Triggers
+  // Triggers — each channel emits a different message shape, so downstream
+  // transforms must normalize (see `output`, used by expression help).
   {
     id: 'telegram-trigger',
     label: 'Telegram',
     kind: 'trigger',
     params: [{ key: 'chat', label: 'Chat / bot', type: 'text' }],
+    output: { source: 'telegram', message: 'Hello from Telegram', chatId: 4242 },
+  },
+  {
+    id: 'whatsapp-trigger',
+    label: 'WhatsApp',
+    kind: 'trigger',
+    params: [{ key: 'number', label: 'Number / bot', type: 'text' }],
+    output: { source: 'whatsapp', chat: { text: 'Hi via WhatsApp', from: '+15550101' } },
+  },
+  {
+    id: 'slack-trigger',
+    label: 'Slack',
+    kind: 'trigger',
+    params: [{ key: 'channel', label: 'Channel', type: 'text', placeholder: '#general' }],
+    output: {
+      source: 'slack',
+      event: { text: 'Yo from Slack', user: 'U0421', channel: 'C7' },
+    },
   },
   {
     id: 'webhook-trigger',
     label: 'Webhook',
     kind: 'trigger',
     params: [{ key: 'path', label: 'Path', type: 'text', placeholder: '/hook' }],
+    output: { source: 'webhook', body: { text: 'payload' } },
   },
   {
     id: 'schedule-trigger',
@@ -171,6 +197,7 @@ export const NODE_CATALOG: NodeTypeSpec[] = [
     params: [
       { key: 'cron', label: 'Cron', type: 'text', placeholder: '*/5 * * * *' },
     ],
+    output: { source: 'schedule', firedAt: 0 },
   },
   // Integrations
   {
@@ -219,7 +246,18 @@ export const NODE_CATALOG: NodeTypeSpec[] = [
     label: 'Set Fields',
     kind: 'action',
     category: 'transform',
-    params: [{ key: 'assignments', label: 'Assignments', type: 'textarea' }],
+    // Extract from upstream context into a unified field (an expression param, so
+    // the inspector offers context-variable chips) — the normalization step.
+    params: [
+      { key: 'field', label: 'Field', type: 'text', placeholder: 'message' },
+      {
+        key: 'value',
+        label: 'Value',
+        type: 'expression',
+        placeholder: '{{ $node["Telegram"].message }}',
+      },
+    ],
+    output: { source: 'telegram', message: 'normalized text' },
   },
   {
     id: 'code',
