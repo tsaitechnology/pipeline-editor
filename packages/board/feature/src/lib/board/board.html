@@ -162,6 +162,17 @@
     }
     <span class="w-px my-[3px] mx-0.5 bg-[var(--border)]"></span>
   }
+  @if (canPersist) {
+    @if (!readonly()) {
+      <button type="button" [class]="cls.toolbarBtn" (click)="savePipeline()">
+        {{ justSaved() ? '✓ Saved' : 'Save' }}
+      </button>
+    }
+    <button type="button" [class]="cls.toolbarBtn" (click)="openPicker()">
+      Open
+    </button>
+    <span class="w-px my-[3px] mx-0.5 bg-[var(--border)]"></span>
+  }
   <button type="button" [class]="cls.toolbarBtn" (click)="exportJson()">
     Export
   </button>
@@ -832,4 +843,43 @@
     <tsai-button variant="ghost" (click)="cancelDelete()">Cancel</tsai-button>
     <tsai-button variant="danger" (click)="confirmDelete()">Delete</tsai-button>
   </ng-container>
+</tsai-dialog>
+
+<!-- Open saved pipeline -->
+<tsai-dialog [(open)]="showOpen" size="sm" title="Open pipeline">
+  @if (savedPipelines().length) {
+    <ul class="flex flex-col gap-1">
+      @for (p of savedPipelines(); track p.id) {
+        <li>
+          <div
+            class="group flex items-center gap-2 rounded-[var(--r-sm)] border border-[var(--border)] px-3 py-2 hover:bg-[var(--surface-3)]"
+          >
+            <button
+              type="button"
+              class="flex min-w-0 flex-1 flex-col items-start text-left cursor-pointer"
+              (click)="loadSaved(p.id)"
+            >
+              <span class="truncate text-sm font-medium text-text">{{
+                p.name
+              }}</span>
+              <span class="text-[11px] text-text-3">
+                {{ p.nodeCount }} node{{ p.nodeCount === 1 ? '' : 's' }} ·
+                {{ savedWhen(p.updatedAt) }}
+              </span>
+            </button>
+            <button
+              type="button"
+              class="shrink-0 grid size-6 place-items-center rounded-[var(--r-sm)] text-text-3 opacity-0 transition-opacity hover:text-[var(--danger)] group-hover:opacity-100"
+              [attr.aria-label]="'Delete ' + p.name"
+              (click)="deleteSaved(p.id, $event)"
+            >
+              ✕
+            </button>
+          </div>
+        </li>
+      }
+    </ul>
+  } @else {
+    <p class="text-sm text-text-3">No saved pipelines yet.</p>
+  }
 </tsai-dialog>

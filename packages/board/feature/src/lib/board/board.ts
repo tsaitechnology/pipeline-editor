@@ -36,6 +36,7 @@ import {
   nodeType,
   type NodeType,
   type Pipeline,
+  type PipelineSummary,
   type Point,
   type PortSide,
   type Rect,
@@ -56,6 +57,7 @@ import {
 import { Button, Dialog } from '@tsai-pe/ui-kit';
 import { LucideAngularModule } from 'lucide-angular';
 import { PIPELINE_BACKEND } from '../pipeline-backend.token';
+import { PIPELINE_STORE } from '../pipeline-store.token';
 
 const LONG_PRESS_MS = 500;
 const MOVE_THRESHOLD = 4;
@@ -234,6 +236,17 @@ export class Board {
 
   private readonly hostEl = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly backend = inject(PIPELINE_BACKEND, { optional: true });
+  private readonly persistence = inject(PIPELINE_STORE, { optional: true });
+
+  /** Whether persistence is wired (shows Save / Open). */
+  protected readonly canPersist = !!this.persistence;
+  /** Whether the Open-pipeline dialog is visible. */
+  protected readonly showOpen = signal(false);
+  /** Summaries of saved pipelines, loaded when the Open dialog is shown. */
+  protected readonly savedPipelines = signal<PipelineSummary[]>([]);
+  /** Transient "Saved" confirmation flag after a successful save. */
+  protected readonly justSaved = signal(false);
+  private savedTimer?: ReturnType<typeof setTimeout>;
 
   private drag: Drag | null = null;
   private longPress?: ReturnType<typeof setTimeout>;
@@ -1098,6 +1111,47 @@ export class Board {
     } catch {
       /* ignore malformed JSON */
     }
+  }
+
+  // ── Persistence (via the injected store) ─────────────────────────────────
+  /** Save the current pipeline to the store, flashing a brief confirmation. */
+  protected async savePipeline(): Promise<void> {
+    if (!this.persistence || this.readonly()) return;
+    await this.persistence.save(this.store.toPipeline());
+    this.justSaved.set(true);
+    clearTimeout(this.savedTimer);
+    this.savedTimer = setTimeout(() => this.justSaved.set(false), 1500);
+  }
+
+  /** Load the saved-pipeline list and open the picker dialog. */
+  protected async openPicker(): Promise<void> {
+    if (!this.persistence) return;
+    this.savedPipelines.set(await this.persistence.list());
+    this.showOpen.set(true);
+  }
+
+  /** Load a saved pipeline into the board and close the picker. */
+  protected async loadSaved(id: string): Promise<void> {
+    if (!this.persistence) return;
+    const pipeline = await this.persistence.load(id);
+    if (pipeline) {
+      this.store.load(pipeline);
+      this.fitView();
+    }
+    this.showOpen.set(false);
+  }
+
+  /** Human-readable "last saved" time for a summary row. */
+  protected savedWhen(at: number): string {
+    return at ? new Date(at).toLocaleString() : '—';
+  }
+
+  /** Delete a saved pipeline, refreshing the list in place. */
+  protected async deleteSaved(id: string, event: Event): Promise<void> {
+    event.stopPropagation();
+    if (!this.persistence) return;
+    await this.persistence.remove(id);
+    this.savedPipelines.set(await this.persistence.list());
   }
 
   protected toggleIssues(): void {
