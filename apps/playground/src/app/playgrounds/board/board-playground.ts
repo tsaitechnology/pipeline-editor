@@ -1,10 +1,7 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { Board, PIPELINE_BACKEND } from '@tsai-pe/board/feature';
-import {
-  type BoardNode,
-  derivePorts,
-  type Pipeline,
-} from '@tsai-pe/shared/models';
+import { type BoardNode, type Pipeline } from '@tsai-pe/shared/models';
+import { derivePorts } from '@tsai-pe/shared/nodes';
 import { TestBackendSystem } from '@tsai-pe/workflow/mock';
 
 /** Build a node, deriving its port layout from its kind/config. */

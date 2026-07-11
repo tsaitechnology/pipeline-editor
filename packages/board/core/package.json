@@ -6,7 +6,8 @@
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
   "peerDependencies": {
-    "@angular/core": "^21.2.0"
+    "@angular/core": "^21.2.0",
+    "@tsai-pe/shared/nodes": "0.0.1"
   },
   "dependencies": {
     "@tsai-pe/shared/models": "0.0.1",

@@ -1,7 +1,5 @@
 import {
   type BoardNode,
-  controlFlowOutputs,
-  isControlFlow,
   type NodeRun,
   type NodeStatus,
   type Pipeline,
@@ -12,6 +10,7 @@ import {
   type RunStatus,
   type Unsubscribe,
 } from '@tsai-pe/shared/models';
+import { controlFlowOutputs, isControlFlow } from '@tsai-pe/shared/nodes';
 
 /** Internal, mutable bookkeeping for one in-flight (or finished) run. */
 interface RunState {

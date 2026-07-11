@@ -4,9 +4,6 @@ Actionable, not-yet-done work only. No history.
 
 ## board / workflow — next
 
-- [ ] Extract the node-type registry (control-flow + catalog + param schemas +
-      `derivePorts`) out of `shared/models` into its own `shared/nodes` lib — it
-      has outgrown models.
 - [ ] Backend contract maturity (beyond run lifecycle): persistence (save / load /
       list pipelines, run history), node catalog supplied by the backend,
       credentials/secrets model, validation from the backend.

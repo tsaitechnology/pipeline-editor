@@ -26,20 +26,14 @@ import {
 import {
   type ActionCategory,
   type BoardNode,
-  catalogEntry,
   type ControlFlowConfig,
   type ControlFlowKind,
-  defaultControlFlowConfig,
   type EdgeEnd,
   type GridPos,
-  isControlFlow,
-  NODE_CATALOG,
   type NodeKind,
   type NodeStatus,
   nodeType,
   type NodeType,
-  type ParamField,
-  paramSchema,
   type Pipeline,
   type Point,
   type PortSide,
@@ -49,6 +43,14 @@ import {
   type Unsubscribe,
   type ValidationIssue,
 } from '@tsai-pe/shared/models';
+import {
+  catalogEntry,
+  defaultControlFlowConfig,
+  isControlFlow,
+  NODE_CATALOG,
+  type ParamField,
+  paramSchema,
+} from '@tsai-pe/shared/nodes';
 import { LucideAngularModule } from 'lucide-angular';
 import { PIPELINE_BACKEND } from '../pipeline-backend.token';
 

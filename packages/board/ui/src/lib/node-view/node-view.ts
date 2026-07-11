@@ -10,13 +10,13 @@ import { LucideAngularModule } from 'lucide-angular';
 import { GRID_CELL } from '@tsai-pe/board/core';
 import {
   type BoardNode,
-  isControlFlow,
   type NodePort,
   type NodeStatus,
   nodeType,
   portFraction,
   type PortSide,
 } from '@tsai-pe/shared/models';
+import { isControlFlow } from '@tsai-pe/shared/nodes';
 import { CONTROL_FLOW_ICONS, NODE_META } from './node-meta';
 
 /** A raw pointer intent originating from a specific port. */

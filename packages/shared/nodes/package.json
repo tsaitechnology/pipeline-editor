@@ -1,13 +1,12 @@
 {
-  "name": "@tsai-pe/workflow/mock",
+  "name": "@tsai-pe/shared/nodes",
   "version": "0.0.1",
   "private": true,
   "type": "commonjs",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
   "dependencies": {
-    "@tsai-pe/shared/models": "0.0.1",
     "tslib": "^2.3.0",
-    "@tsai-pe/shared/nodes": "0.0.1"
+    "@tsai-pe/shared/models": "0.0.1"
   }
 }

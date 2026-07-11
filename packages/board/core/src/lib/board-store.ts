@@ -3,8 +3,6 @@ import {
   type ActionCategory,
   type BoardNode,
   type CellSize,
-  defaultControlFlowConfig,
-  derivePorts,
   type Edge,
   type EdgeEnd,
   type GridPos,
@@ -20,6 +18,10 @@ import {
   type ValidationIssue,
   validatePipeline,
 } from '@tsai-pe/shared/models';
+import {
+  defaultControlFlowConfig,
+  derivePorts,
+} from '@tsai-pe/shared/nodes';
 import { boundsOf, edgePath, nodeRect, portAnchor, rectsIntersect } from './geometry';
 import { routeEdge } from './routing';
 import { Viewport } from './viewport';

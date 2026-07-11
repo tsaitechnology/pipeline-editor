@@ -21,7 +21,8 @@
       "@tsai-pe/board/core": ["./packages/board/core/src/index.ts"],
       "@tsai-pe/board/ui": ["./packages/board/ui/src/index.ts"],
       "@tsai-pe/board/feature": ["./packages/board/feature/src/index.ts"],
-      "@tsai-pe/workflow/mock": ["./packages/workflow/mock/src/index.ts"]
+      "@tsai-pe/workflow/mock": ["./packages/workflow/mock/src/index.ts"],
+      "@tsai-pe/shared/nodes": ["./packages/shared/nodes/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]

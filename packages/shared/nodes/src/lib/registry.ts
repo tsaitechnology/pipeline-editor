@@ -8,16 +8,15 @@ import {
   type NodePort,
   type NodeType,
   nodeType,
-} from './models';
+} from '@tsai-pe/shared/models';
 
 /**
  * Node-type registry (n8n-style descriptions) shared by the editor and the
  * future execution engine. For now it covers control-flow: mapping a node's
  * configuration to its named output ports, and the default config per subtype.
  *
- * Kept in `shared` so both `board` (editor) and the future `workflow` engine can
- * depend on it without crossing scope boundaries; split into its own lib when the
- * engine lands.
+ * Lives in `shared` (its own lib) so both `board` (editor) and the `workflow`
+ * engine can depend on it without crossing scope boundaries.
  */
 
 /** Whether a node is a control-flow node (if / switch / filter). */
