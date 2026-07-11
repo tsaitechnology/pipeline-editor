@@ -76,9 +76,9 @@
 }
 
 @for (port of node().ports; track port.id) {
-  @if (port.label && port.role === 'output') {
+  @if (port.label && port.role === 'output' && port.side === 'right') {
     <span
-      class="absolute right-2.5 -translate-y-1/2 max-w-[72%] truncate text-right text-[10px] text-text-2 pointer-events-none"
+      class="absolute right-2.5 -translate-y-1/2 max-w-[60%] truncate text-right text-[10px] text-text-2 pointer-events-none"
       [style.top.%]="fraction(port)"
       >{{ port.label }}</span
     >
