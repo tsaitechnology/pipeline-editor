@@ -1,0 +1,19 @@
+{
+  "name": "mock",
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/workflow/mock/src",
+  "projectType": "library",
+  "tags": ["scope:workflow", "type:core"],
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/packages/workflow/mock",
+        "main": "packages/workflow/mock/src/index.ts",
+        "tsConfig": "packages/workflow/mock/tsconfig.lib.json",
+        "assets": []
+      }
+    }
+  }
+}

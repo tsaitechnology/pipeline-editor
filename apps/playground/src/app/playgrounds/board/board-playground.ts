@@ -1,10 +1,11 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
-import { Board } from '@tsai-pe/board/feature';
+import { Board, PIPELINE_BACKEND } from '@tsai-pe/board/feature';
 import {
   type BoardNode,
   derivePorts,
   type Pipeline,
 } from '@tsai-pe/shared/models';
+import { TestBackendSystem } from '@tsai-pe/workflow/mock';
 
 /** Build a node, deriving its port layout from its kind/config. */
 function node(spec: Omit<BoardNode, 'ports'>): BoardNode {
@@ -33,7 +34,6 @@ const CAT_PIPELINE: Pipeline = {
       subtitle: '"draw 10 cats"',
       pos: { col: 2, row: 8 },
       size: SIZE,
-      status: 'success',
     }),
     node({
       id: 'node-2',
@@ -61,7 +61,6 @@ const CAT_PIPELINE: Pipeline = {
       subtitle: 'one cat per command',
       pos: { col: 32, row: 3 },
       size: SIZE,
-      status: 'running',
     }),
     node({
       id: 'node-5',
@@ -90,7 +89,6 @@ const CAT_PIPELINE: Pipeline = {
       pos: { col: 54, row: 13 },
       size: SIZE,
       required: false,
-      status: 'error',
     }),
     node({
       id: 'node-8',
@@ -142,6 +140,12 @@ function edge(id: string, from: string, fromPort: string, to: string) {
   selector: 'app-board',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [Board],
+  providers: [
+    {
+      provide: PIPELINE_BACKEND,
+      useFactory: () => new TestBackendSystem({ stepDelayMs: 550 }),
+    },
+  ],
   template: `<div class="flex h-[75dvh] flex-col gap-3">
     <div class="flex items-start justify-between gap-4">
       <p class="text-sm text-text-2">

@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  DestroyRef,
   ElementRef,
   effect,
   inject,
@@ -32,16 +33,20 @@ import {
   type GridPos,
   isControlFlow,
   type NodeKind,
+  type NodeStatus,
   nodeType,
   type NodeType,
   type Pipeline,
   type Point,
   type PortSide,
   type Rect,
+  type RunSnapshot,
   type Size,
+  type Unsubscribe,
   type ValidationIssue,
 } from '@tsai-pe/shared/models';
 import { LucideAngularModule } from 'lucide-angular';
+import { PIPELINE_BACKEND } from '../pipeline-backend.token';
 
 const LONG_PRESS_MS = 500;
 const MOVE_THRESHOLD = 4;
@@ -192,10 +197,27 @@ export class Board {
   }
 
   private readonly hostEl = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly backend = inject(PIPELINE_BACKEND, { optional: true });
 
   private drag: Drag | null = null;
   private longPress?: ReturnType<typeof setTimeout>;
   private spaceHeld = false;
+  private runUnsub?: Unsubscribe;
+
+  /** Whether a backend is wired (shows the Run control). */
+  protected readonly canRun = !!this.backend;
+  /** Latest snapshot of the current/last run, or null. */
+  protected readonly run = signal<RunSnapshot | null>(null);
+  protected readonly running = computed(() => this.run()?.status === 'running');
+  protected readonly showLog = signal(false);
+  /** Per-node run status, applied over each node as an overlay. */
+  protected readonly runStatuses = computed<Record<string, NodeStatus>>(() => {
+    const r = this.run();
+    if (!r) return {};
+    const map: Record<string, NodeStatus> = {};
+    for (const [id, nr] of Object.entries(r.nodes)) map[id] = nr.status;
+    return map;
+  });
   private paletteDrag: { kind: NodeKind; category?: ActionCategory; label: string } | null =
     null;
 
@@ -281,6 +303,7 @@ export class Board {
       const pipeline = this.pipeline();
       if (pipeline) this.store.load(pipeline);
     });
+    inject(DestroyRef).onDestroy(() => this.disposeRun());
   }
 
   // ── Board-level pointer handling (empty space, pan, drop) ────────────────
@@ -816,6 +839,38 @@ export class Board {
     } else {
       this.setConfig({ ...c, expression: `${c.expression} ${ref}`.trim() });
     }
+  }
+
+  // ── Run (via the injected backend) ───────────────────────────────────────
+  protected toggleRun(): void {
+    if (this.running()) this.stopRun();
+    else this.startRun();
+  }
+
+  private startRun(): void {
+    if (!this.backend) return;
+    this.disposeRun();
+    this.showLog.set(true);
+    const runId = this.backend.startRun(this.store.toPipeline());
+    this.runUnsub = this.backend.observe(runId, (snapshot) =>
+      this.run.set(snapshot),
+    );
+  }
+
+  protected stopRun(): void {
+    const r = this.run();
+    if (r && this.backend && r.status === 'running') this.backend.stop(r.runId);
+  }
+
+  protected clearRun(): void {
+    this.disposeRun();
+    this.run.set(null);
+    this.showLog.set(false);
+  }
+
+  private disposeRun(): void {
+    this.runUnsub?.();
+    this.runUnsub = undefined;
   }
 
   // ── Save / load / validation ─────────────────────────────────────────────

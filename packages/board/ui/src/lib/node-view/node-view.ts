@@ -12,6 +12,7 @@ import {
   type BoardNode,
   isControlFlow,
   type NodePort,
+  type NodeStatus,
   nodeType,
   portFraction,
   type PortSide,
@@ -66,6 +67,8 @@ export class NodeView {
   readonly targetPort = input<string | null>(null);
   /** Whether the resize handle is shown (disabled in read-only mode). */
   readonly resizable = input(true);
+  /** Live run status; overrides the node's own status while a run is active. */
+  readonly runStatus = input<NodeStatus | undefined>(undefined);
 
   /** Pointer went down on the node body (select / start move). */
   readonly bodyPointerDown = output<PointerEvent>();
@@ -113,7 +116,7 @@ export class NodeView {
 
   /** Execution-status overlay classes (border ring + corner badge), or null. */
   protected readonly statusOverlay = computed(() => {
-    switch (this.node().status) {
+    switch (this.runStatus() ?? this.node().status) {
       case 'running':
         return {
           ring: 'border-2 border-[var(--info)] animate-pulse',
