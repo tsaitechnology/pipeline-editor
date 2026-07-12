@@ -60,6 +60,8 @@ interface RunState {
    * node executes `inFan` times (its upstream's emitted fan).
    */
   outFan: Record<string, number>;
+  /** Per-item payloads currently flowing through split/merge fan-out segments. */
+  fanItems: Record<string, unknown[]>;
   /** Runtime trigger metadata available to expressions as `$trigger`. */
   trigger?: TriggerContext;
   /** Immutable-ish outputs captured by trigger pass for inspection. */
@@ -85,6 +87,7 @@ export type MockSideEffect =
       title?: string;
       body?: string;
       imageUrl?: string;
+      images?: { imageUrl: string; caption?: string }[];
       json?: unknown;
     }
   | {
@@ -235,6 +238,7 @@ export class TestBackendSystem implements PipelineBackend {
       outputs: {},
       selected: {},
       outFan: {},
+      fanItems: {},
       trigger: undefined,
       triggerIds: this.triggerQueue(pipeline, this.seq - 1),
       triggerIndex: 0,
@@ -336,6 +340,7 @@ export class TestBackendSystem implements PipelineBackend {
     run.outputs = {};
     run.selected = {};
     run.outFan = {};
+    run.fanItems = {};
     run.attempts = {};
     run.trigger = this.triggerContext(pipeline, run.firingTriggerId);
     for (const node of pipeline.nodes) {
@@ -649,6 +654,7 @@ export class TestBackendSystem implements PipelineBackend {
       .map((e) => run.outputs[e.source.nodeId]);
     const count = this.countFrom(upstream, node);
     const inFan = this.inFanOf(run, pipeline, node);
+    const fanItems = this.inputFanItems(run, pipeline, node);
 
     if (node.kind === 'trigger') {
       run.outFan[node.id] = 1;
@@ -658,13 +664,17 @@ export class TestBackendSystem implements PipelineBackend {
     if (node.category === 'split') {
       const items = this.splitItems(node, ctx, count);
       run.outFan[node.id] = inFan * items.length;
+      run.fanItems[node.id] = items;
       nodeRun.progress = { done: items.length, total: items.length };
       this.log(run, `Split → fan-out ×${items.length}`, node.id);
-      return { items };
+      return { items, count: items.length };
     }
     if (node.category === 'merge') {
-      const total = inFan > 1 ? inFan : (node.bufferSize ?? count);
+      const total = this.mergeExpectedCount(node, ctx, inFan, count);
       const batch = this.mergeBatch(upstream, total);
+      if (batch.length < total) {
+        throw new Error(`Merge expected ${total} items, got ${batch.length}`);
+      }
       run.outFan[node.id] = 1;
       nodeRun.progress = { done: total, total };
       this.log(run, `Merge buffered ${total}/${total} → 1 batch`, node.id);
@@ -682,12 +692,16 @@ export class TestBackendSystem implements PipelineBackend {
       return { branch: run.selected[node.id] };
     }
     if (node.category === 'integration')
-      return this.integrationOutput(node, ctx);
+      return this.integrationOutput(node, ctx, fanItems);
     if (node.category === 'transform') return this.transformOutput(node, ctx);
     return { ok: true, count };
   }
 
-  private integrationOutput(node: BoardNode, ctx: EvalContext): unknown {
+  private integrationOutput(
+    node: BoardNode,
+    ctx: EvalContext,
+    fanItems: unknown[],
+  ): unknown {
     if (node.type === 'public-api-request') {
       const preset = stringValue(node.data?.['preset']) ?? 'jsonplaceholder';
       const url =
@@ -699,7 +713,7 @@ export class TestBackendSystem implements PipelineBackend {
       return this.publicApiFetcher({ preset, url, timeoutMs });
     }
     if (node.type === 'llm-agent') return this.llmOutput(node, ctx);
-    if (node.type === 'image-gen') return this.imageOutput(node, ctx);
+    if (node.type === 'image-gen') return this.imageOutput(node, ctx, fanItems);
     if (isAiNode(node.type)) return this.aiOutput(node);
     const sample = this.catalog.sampleOutput(node.type);
     return sample ? JSON.parse(JSON.stringify(sample)) : { ok: true };
@@ -736,28 +750,33 @@ export class TestBackendSystem implements PipelineBackend {
     };
   }
 
-  private imageOutput(node: BoardNode, ctx: EvalContext): unknown {
+  private imageOutput(
+    node: BoardNode,
+    ctx: EvalContext,
+    fanItems: unknown[],
+  ): unknown {
     const model = stringValue(node.data?.['model']) ?? 'mock-image-v1';
-    const prompt = String(
-      resolveTemplate(String(node.data?.['prompt'] ?? ''), ctx) ?? '',
-    );
-    const items =
-      ctx.json && typeof ctx.json === 'object'
-        ? (ctx.json as Record<string, unknown>)['items']
-        : undefined;
-    const prompts = Array.isArray(items)
-      ? items.map((item, index) => itemPrompt(item, index))
-      : [prompt];
+    const promptTemplate = String(node.data?.['prompt'] ?? '');
+    const prompts = fanItems.length
+      ? fanItems.map((item, index) =>
+          promptFromItem(promptTemplate, ctx, item, index),
+        )
+      : [
+          String(
+            resolveTemplate(String(node.data?.['prompt'] ?? ''), ctx) ?? '',
+          ),
+        ];
     const images = prompts.map((itemPromptValue, index) => ({
       index,
       prompt: itemPromptValue,
       imageUrl: mockPromptPng(itemPromptValue),
       model,
     }));
+    const firstPrompt = images[0]?.prompt ?? '';
     return {
       model,
-      prompt: images[0]?.prompt ?? prompt,
-      imageUrl: images[0]?.imageUrl ?? mockPromptPng(prompt),
+      prompt: firstPrompt,
+      imageUrl: images[0]?.imageUrl ?? mockPromptPng(firstPrompt),
       images,
       count: images.length,
     };
@@ -1035,6 +1054,7 @@ export class TestBackendSystem implements PipelineBackend {
         title: stringValue(data['title']) ?? node.title,
         body: stringValue(data['caption']),
         imageUrl: stringValue(data['imageUrl']),
+        images: imageList(data['images']),
       };
     } else if (node.type === 'download-file') {
       event = {
@@ -1063,6 +1083,27 @@ export class TestBackendSystem implements PipelineBackend {
     );
     if (!active.length) return 1;
     return Math.max(...active.map((e) => run.outFan[e.source.nodeId] ?? 1));
+  }
+
+  private inputFanItems(
+    run: RunState,
+    pipeline: Pipeline,
+    node: BoardNode,
+  ): unknown[] {
+    const active = pipeline.edges.filter(
+      (e) => e.target.nodeId === node.id && this.edgeActive(run, e),
+    );
+    for (const edge of active) {
+      const explicit = run.fanItems[edge.source.nodeId];
+      if (explicit?.length) return explicit;
+      const output = run.outputs[edge.source.nodeId];
+      if (!output || typeof output !== 'object') continue;
+      const rec = output as Record<string, unknown>;
+      if (Array.isArray(rec['images'])) return rec['images'];
+      if (Array.isArray(rec['items'])) return rec['items'];
+      if (Array.isArray(rec['batch'])) return rec['batch'];
+    }
+    return [];
   }
 
   /**
@@ -1111,11 +1152,27 @@ export class TestBackendSystem implements PipelineBackend {
     for (const out of upstream) {
       if (!out || typeof out !== 'object') continue;
       const rec = out as Record<string, unknown>;
-      if (Array.isArray(rec['images'])) return rec['images'];
-      if (Array.isArray(rec['items'])) return rec['items'];
-      if (Array.isArray(rec['batch'])) return rec['batch'];
+      if (Array.isArray(rec['images'])) return rec['images'].slice(0, total);
+      if (Array.isArray(rec['items'])) return rec['items'].slice(0, total);
+      if (Array.isArray(rec['batch'])) return rec['batch'].slice(0, total);
     }
     return Array.from({ length: total }, (_, i) => i);
+  }
+
+  private mergeExpectedCount(
+    node: BoardNode,
+    ctx: EvalContext,
+    inFan: number,
+    fallback: number,
+  ): number {
+    const raw = node.data?.['expectedCount'];
+    if (typeof raw === 'string' && raw.trim()) {
+      const value = raw.includes('{{')
+        ? resolveTemplate(raw, ctx)
+        : coerceExpression(raw, ctx);
+      return clampInt(value, inFan || fallback, 1, 10_000);
+    }
+    return inFan > 1 ? inFan : (node.bufferSize ?? fallback);
   }
 
   private triggerContext(
@@ -1338,6 +1395,17 @@ function itemPrompt(item: unknown, index: number): string {
     );
   }
   return stringValue(item) ?? `Generated image ${index + 1}`;
+}
+
+function promptFromItem(
+  template: string,
+  ctx: EvalContext,
+  item: unknown,
+  index: number,
+): string {
+  if (!template.trim()) return itemPrompt(item, index);
+  const itemCtx = { ...ctx, json: item };
+  return String(resolveTemplate(template, itemCtx) ?? itemPrompt(item, index));
 }
 
 function mockPromptPng(prompt: string): string {
@@ -1732,6 +1800,25 @@ function stringArray(value: unknown, fallback: string[]): string[] {
 function contentValue(value: unknown): string {
   if (value == null) return '';
   return typeof value === 'object' ? JSON.stringify(value) : String(value);
+}
+
+function imageList(value: unknown): { imageUrl: string; caption?: string }[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index) => {
+    if (!item || typeof item !== 'object') return [];
+    const rec = item as Record<string, unknown>;
+    const imageUrl = stringValue(rec['imageUrl']);
+    if (!imageUrl) return [];
+    return [
+      {
+        imageUrl,
+        caption:
+          stringValue(rec['caption']) ??
+          stringValue(rec['prompt']) ??
+          `Image ${index + 1}`,
+      },
+    ];
+  });
 }
 
 function numberValue(value: unknown): number | undefined {

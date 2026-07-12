@@ -339,7 +339,12 @@ export const NODE_CATALOG: NodeTypeSpec[] = [
         placeholder: 'hello,file',
         rows: 5,
       },
-      { key: 'mime', label: 'MIME type', type: 'text', placeholder: 'text/csv' },
+      {
+        key: 'mime',
+        label: 'MIME type',
+        type: 'text',
+        placeholder: 'text/csv',
+      },
     ],
     output: {
       source: 'file',
@@ -583,7 +588,12 @@ export const NODE_CATALOG: NodeTypeSpec[] = [
     category: 'transform',
     params: [
       { key: 'windowMs', label: 'Window ms', type: 'number', min: 1 },
-      { key: 'key', label: 'Key', type: 'expression', placeholder: '{{ $trigger.id }}' },
+      {
+        key: 'key',
+        label: 'Key',
+        type: 'expression',
+        placeholder: '{{ $trigger.id }}',
+      },
     ],
     output: { throttled: false, windowMs: 1000 },
   },
@@ -594,7 +604,12 @@ export const NODE_CATALOG: NodeTypeSpec[] = [
     category: 'transform',
     params: [
       { key: 'windowMs', label: 'Window ms', type: 'number', min: 1 },
-      { key: 'key', label: 'Key', type: 'expression', placeholder: '{{ $trigger.id }}' },
+      {
+        key: 'key',
+        label: 'Key',
+        type: 'expression',
+        placeholder: '{{ $trigger.id }}',
+      },
     ],
     output: { debounced: true, windowMs: 1000 },
   },
@@ -712,7 +727,14 @@ export const NODE_CATALOG: NodeTypeSpec[] = [
     label: 'Merge',
     kind: 'action',
     category: 'merge',
-    params: [],
+    params: [
+      {
+        key: 'expectedCount',
+        label: 'Expected count',
+        type: 'expression',
+        placeholder: '{{ $node["Plan Telegram Media"].count }}',
+      },
+    ],
     output: { batch: [{ index: 0, value: 'item' }] },
   },
   // Effects
@@ -820,6 +842,7 @@ export const NODE_CATALOG: NodeTypeSpec[] = [
     params: [
       { key: 'title', label: 'Title', type: 'expression' },
       { key: 'imageUrl', label: 'Image URL', type: 'url' },
+      { key: 'images', label: 'Images', type: 'expression' },
       { key: 'caption', label: 'Caption', type: 'expression' },
     ],
     output: {
@@ -865,7 +888,8 @@ export function createStaticNodeCatalog(
     version,
     specs: () => specs,
     entry: (type) => (type ? byId.get(type) : undefined),
-    params: (node) => byId.get(node.type ?? '')?.params ?? PARAM_SCHEMAS[nodeType(node)],
+    params: (node) =>
+      byId.get(node.type ?? '')?.params ?? PARAM_SCHEMAS[nodeType(node)],
     outputSchema: (type) => {
       const spec = type ? byId.get(type) : undefined;
       return spec?.outputSchema ?? inferOutputSchema(spec?.output);
@@ -884,10 +908,12 @@ export function inferOutputSchema(value: unknown): OutputSchema | undefined {
     return {
       type: 'object',
       properties: Object.fromEntries(
-        Object.entries(value as Record<string, unknown>).flatMap(([key, child]) => {
-          const schema = inferOutputSchema(child);
-          return schema ? [[key, schema]] : [];
-        }),
+        Object.entries(value as Record<string, unknown>).flatMap(
+          ([key, child]) => {
+            const schema = inferOutputSchema(child);
+            return schema ? [[key, schema]] : [];
+          },
+        ),
       ),
     };
   }

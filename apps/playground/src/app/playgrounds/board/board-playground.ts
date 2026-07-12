@@ -200,7 +200,7 @@ const CAT_PIPELINE: Pipeline = {
       size: SIZE,
       data: {
         model: 'mock-image-v1',
-        prompt: '{{ $json.items[0].prompt }}',
+        prompt: '{{ $json.prompt }}',
       },
     }),
     node({
@@ -212,7 +212,9 @@ const CAT_PIPELINE: Pipeline = {
       subtitle: 'buffer ×30 → batch',
       pos: { col: 65, row: 2 },
       size: SIZE,
-      bufferSize: 30,
+      data: {
+        expectedCount: '{{ $node["Plan Telegram Media"].count }}',
+      },
     }),
     node({
       id: 'send-tg',
@@ -255,10 +257,10 @@ const CAT_PIPELINE: Pipeline = {
       size: SIZE,
       required: false,
       data: {
-        title: 'Generated preview',
-        imageUrl: '{{ $node["Image Generator"].imageUrl }}',
+        title: 'Generated images',
+        images: '{{ $json.batch }}',
         caption:
-          'First of {{ $node["Image Generator"].count }}: {{ $node["Image Generator"].prompt }}',
+          '{{ $node["Plan Telegram Media"].count }} generated images for {{ $trigger.title }}',
       },
     }),
     node({
@@ -473,7 +475,26 @@ function edge(id: string, from: string, fromPort: string, to: string) {
       size="lg"
     >
       @if (resultDialog(); as dialog) {
-        @if (dialog.imageUrl) {
+        @if (dialog.images?.length) {
+          <div
+            class="grid max-h-[70vh] grid-cols-2 gap-3 overflow-auto pr-1 md:grid-cols-3"
+          >
+            @for (image of dialog.images; track image.imageUrl) {
+              <figure class="min-w-0">
+                <img
+                  class="aspect-[16/9] w-full rounded-md border border-border object-contain"
+                  [src]="image.imageUrl"
+                  alt=""
+                />
+                @if (image.caption) {
+                  <figcaption class="mt-1 truncate text-xs text-text-2">
+                    {{ image.caption }}
+                  </figcaption>
+                }
+              </figure>
+            }
+          </div>
+        } @else if (dialog.imageUrl) {
           <img
             class="mb-3 max-h-80 w-full rounded-md border border-border object-contain"
             [src]="dialog.imageUrl"

@@ -557,18 +557,42 @@ describe('TestBackendSystem — failures', () => {
       ...action('image', 'integration'),
       type: 'image-gen',
       title: 'Image Generator',
-      data: { model: 'mock-image-v1', prompt: '{{ $json.items[0].prompt }}' },
+      data: { model: 'mock-image-v1', prompt: '{{ $json.prompt }}' },
     };
-    const merge: BoardNode = { ...action('merge', 'merge'), type: 'merge' };
+    const merge: BoardNode = {
+      ...action('merge', 'merge'),
+      type: 'merge',
+      data: { expectedCount: '{{ $node["Plan Telegram Media"].count }}' },
+    };
+    const preview: BoardNode = {
+      ...effect('preview'),
+      type: 'image-preview',
+      data: {
+        title: 'Generated images',
+        images: '{{ $json.batch }}',
+        caption: '{{ $node["Plan Telegram Media"].count }} generated images',
+      },
+    };
+    const sys = fast();
+    let dialog:
+      | {
+          images?: { imageUrl: string; caption?: string }[];
+          body?: string;
+        }
+      | undefined;
+    sys.observeSideEffects((event) => {
+      if (event.kind === 'dialog') dialog = event;
+    });
     const snap = await runToEnd(
-      fast(),
+      sys,
       pipeline(
-        [tg, llm, split, image, merge],
+        [tg, llm, split, image, merge, preview],
         [
           edge('telegram', 'llm'),
           edge('llm', 'split'),
           edge('split', 'image'),
           edge('image', 'merge'),
+          edge('merge', 'preview'),
         ],
       ),
     );
@@ -579,6 +603,7 @@ describe('TestBackendSystem — failures', () => {
       count: 3,
     });
     expect(snap.nodes['split'].progress).toEqual({ done: 3, total: 3 });
+    expect(snap.nodes['image'].progress).toEqual({ done: 3, total: 3 });
     expect(snap.nodes['image'].output).toMatchObject({
       count: 3,
       images: [
@@ -587,6 +612,13 @@ describe('TestBackendSystem — failures', () => {
         expect.objectContaining({ prompt: 'Elephant safari 2' }),
       ],
     });
+    expect(
+      (
+        snap.nodes['image'].output as {
+          images: { prompt: string }[];
+        }
+      ).images.map((img) => img.prompt),
+    ).toEqual(['Cat portrait', 'Elephant safari 1', 'Elephant safari 2']);
     const imageOutput = snap.nodes['image'].output as {
       imageUrl: string;
       images: { imageUrl: string }[];
@@ -606,6 +638,13 @@ describe('TestBackendSystem — failures', () => {
         expect.objectContaining({ prompt: 'Elephant safari 1' }),
         expect.objectContaining({ prompt: 'Elephant safari 2' }),
       ],
+    });
+    expect(snap.nodes['merge'].progress).toEqual({ done: 3, total: 3 });
+    expect(dialog?.body).toBe('3 generated images');
+    expect(dialog?.images).toHaveLength(3);
+    expect(dialog?.images?.[0]).toMatchObject({
+      caption: 'Cat portrait',
+      imageUrl: expect.stringMatching(/^data:image\/png;base64,/),
     });
   });
 
@@ -989,6 +1028,7 @@ describe('TestBackendSystem — smart evaluation', () => {
         title: 'Preview',
         body: 'Generated image',
         imageUrl: 'https://example.test/cat.png',
+        images: [],
       },
     ]);
   });
