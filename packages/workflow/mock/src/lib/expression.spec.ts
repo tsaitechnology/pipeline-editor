@@ -8,8 +8,13 @@ import {
   type EvalContext,
 } from './expression';
 
-const ctx = (json: unknown, nodes: Record<string, unknown> = {}): EvalContext => ({
+const ctx = (
+  json: unknown,
+  nodes: Record<string, unknown> = {},
+  trigger?: unknown,
+): EvalContext => ({
   json,
+  trigger,
   node: (title) => nodes[title],
 });
 
@@ -71,6 +76,12 @@ describe('evaluateExpression — context access', () => {
   it('reads other nodes via $node["Title"]', () => {
     const c = ctx(undefined, { Telegram: { message: 'yo' } });
     expect(ev('$node["Telegram"].message', c)).toBe('yo');
+  });
+
+  it('reads trigger metadata via $trigger', () => {
+    const c = ctx(undefined, {}, { channel: 'telegram', type: 'telegram-trigger' });
+    expect(ev('$trigger.channel', c)).toBe('telegram');
+    expect(ev('$trigger.type == "telegram-trigger"', c)).toBe(true);
   });
 
   it('returns undefined for a missing key on an existing object', () => {

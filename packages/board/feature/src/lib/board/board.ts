@@ -44,18 +44,22 @@ import {
   type Point,
   type PortSide,
   type Rect,
+  type RunSummary,
   type RunSnapshot,
+  type RunStatus,
+  type TriggerContext,
   type Size,
   type Unsubscribe,
   type ValidationIssue,
 } from '@tsai-pe/models';
 import {
-  catalogEntry,
   defaultControlFlowConfig,
   isControlFlow,
-  NODE_CATALOG,
+  type NodeCatalog,
+  type NodeTypeSpec,
   type ParamField,
-  paramSchema,
+  type ParamType,
+  STATIC_NODE_CATALOG,
   variablePaths,
 } from '@tsai-pe/nodes';
 import {
@@ -69,6 +73,7 @@ import {
 } from '@tsai-pe/ui-kit';
 import { LucideAngularModule } from 'lucide-angular';
 import { PIPELINE_BACKEND } from '../pipeline-backend.token';
+import { PIPELINE_NODE_CATALOG } from '../node-catalog.token';
 import { PIPELINE_STORE } from '../pipeline-store.token';
 
 const LONG_PRESS_MS = 500;
@@ -94,7 +99,7 @@ interface PaletteGroup {
   items: PaletteItem[];
 }
 
-function fromCatalog(spec: (typeof NODE_CATALOG)[number]): PaletteItem {
+function fromCatalog(spec: NodeTypeSpec): PaletteItem {
   const meta = NODE_META[nodeType(spec)];
   return {
     label: spec.label,
@@ -107,7 +112,7 @@ function fromCatalog(spec: (typeof NODE_CATALOG)[number]): PaletteItem {
   };
 }
 
-function paletteDescription(spec: (typeof NODE_CATALOG)[number]): string {
+function paletteDescription(spec: NodeTypeSpec): string {
   if (spec.params.length) {
     return spec.params.map((param) => param.label).join(' · ');
   }
@@ -117,31 +122,66 @@ function paletteDescription(spec: (typeof NODE_CATALOG)[number]): string {
   return spec.category ? `${spec.category} node` : `${spec.kind} node`;
 }
 
-const byType = (t: NodeType) =>
-  NODE_CATALOG.filter((s) => nodeType(s) === t).map(fromCatalog);
+function paletteSearchText(
+  item: PaletteItem,
+  group: string,
+  catalog: NodeCatalog,
+): string {
+  const spec = catalog.entry(item.type);
+  const paramText =
+    spec?.params
+      .flatMap((param) => [
+        param.key,
+        param.label,
+        param.placeholder ?? '',
+        param.help ?? '',
+        ...(param.options?.flatMap((o) => [o.value, o.label]) ?? []),
+      ])
+      .join(' ') ?? '';
+  const outputText = variablePaths(spec?.output).join(' ');
+  return [
+    group,
+    item.label,
+    item.description,
+    item.category ?? '',
+    item.kind,
+    item.type ?? '',
+    paramText,
+    outputText,
+  ]
+    .join(' ')
+    .toLowerCase();
+}
 
-/** Palette grouped by category; concrete types come from the node catalog. */
-const PALETTE_GROUPS: PaletteGroup[] = [
-  { label: 'Triggers', items: byType('trigger') },
-  { label: 'Integrations', items: byType('integration') },
-  { label: 'Transforms', items: byType('transform') },
-  {
-    label: 'Flow',
-    items: [
-      ...byType('split'),
-      ...byType('merge'),
-      {
-        label: 'Control flow',
-        description: 'Branch, switch, or filter by expression',
-        kind: 'action',
-        category: 'control-flow',
-        icon: NODE_META['control-flow'].icon,
-        color: NODE_META['control-flow'].color,
-      },
-    ],
-  },
-  { label: 'Effects', items: byType('effect') },
-];
+function paletteGroups(catalog: NodeCatalog): PaletteGroup[] {
+  const byType = (t: NodeType) =>
+    catalog
+      .specs()
+      .filter((s) => nodeType(s) === t)
+      .map(fromCatalog);
+
+  return [
+    { label: 'Triggers', items: byType('trigger') },
+    { label: 'Integrations', items: byType('integration') },
+    { label: 'Transforms', items: byType('transform') },
+    {
+      label: 'Flow',
+      items: [
+        ...byType('split'),
+        ...byType('merge'),
+        {
+          label: 'Control flow',
+          description: 'Branch, switch, or filter by expression',
+          kind: 'action',
+          category: 'control-flow',
+          icon: NODE_META['control-flow'].icon,
+          color: NODE_META['control-flow'].color,
+        },
+      ],
+    },
+    { label: 'Effects', items: byType('effect') },
+  ];
+}
 
 /** A resolved port drop target under the cursor. */
 interface PortHit {
@@ -176,6 +216,48 @@ interface ContextMenu {
   y: number;
   cell: GridPos;
   nodeId?: string;
+}
+
+interface RunRecorder {
+  recordRun(summary: RunSummary): void;
+}
+
+function canRecordRuns(store: unknown): store is RunRecorder {
+  return (
+    typeof store === 'object' &&
+    store !== null &&
+    typeof (store as RunRecorder).recordRun === 'function'
+  );
+}
+
+function isTerminalRun(status: RunStatus): boolean {
+  return status === 'success' || status === 'error' || status === 'canceled';
+}
+
+function validUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function validJson(value: string, type: ParamType): boolean {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (type === 'array') return Array.isArray(parsed);
+    if (type === 'object') {
+      return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function unsupportedBrowserApi(code: string): boolean {
+  return /\b(window|document|localStorage|sessionStorage|navigator)\b/.test(code);
 }
 
 /**
@@ -226,8 +308,10 @@ export class Board {
   /** View-only mode: pan/zoom/select/inspect stay, all editing is disabled. */
   readonly readonly = input(false);
 
+  private readonly catalog =
+    inject(PIPELINE_NODE_CATALOG, { optional: true }) ?? STATIC_NODE_CATALOG;
   protected readonly store = new BoardStore();
-  protected readonly paletteGroups = PALETTE_GROUPS;
+  protected readonly paletteGroups = paletteGroups(this.catalog);
   protected readonly paletteSearch = signal('');
   protected readonly paletteCollapsed = signal(false);
   private readonly paletteGroupState = signal<Record<string, boolean>>({});
@@ -240,16 +324,7 @@ export class Board {
       .map((group) => ({
         ...group,
         items: group.items.filter((item) =>
-          [
-            item.label,
-            item.description,
-            item.category ?? '',
-            item.kind,
-            item.type ?? '',
-          ]
-            .join(' ')
-            .toLowerCase()
-            .includes(query),
+          paletteSearchText(item, group.label, this.catalog).includes(query),
         ),
       }))
       .filter((group) => group.items.length);
@@ -342,8 +417,12 @@ export class Board {
   protected readonly canPersist = !!this.persistence;
   /** Whether the Open-pipeline dialog is visible. */
   protected readonly showOpen = signal(false);
+  /** Whether the Run-history dialog is visible. */
+  protected readonly showHistory = signal(false);
   /** Summaries of saved pipelines, loaded when the Open dialog is shown. */
   protected readonly savedPipelines = signal<PipelineSummary[]>([]);
+  /** Recent runs of the current pipeline, loaded when the History dialog is shown. */
+  protected readonly runHistory = signal<RunSummary[]>([]);
   /** Transient "Saved" confirmation flag after a successful save. */
   protected readonly justSaved = signal(false);
   private savedTimer?: ReturnType<typeof setTimeout>;
@@ -469,6 +548,10 @@ export class Board {
   >([]);
   /** Whether the validation issues panel is open. */
   protected readonly showIssues = signal(false);
+  protected readonly issues = computed<ValidationIssue[]>(() => [
+    ...this.store.issues(),
+    ...this.catalogIssues(),
+  ]);
   /** True while a connection is being drawn (lights up input ports). */
   protected readonly isConnecting = computed(() => this.draftPath() !== null);
   /** The input port a dragged connection will magnet-snap onto. */
@@ -486,10 +569,10 @@ export class Board {
   private mmDragging = false;
 
   protected readonly errorCount = computed(
-    () => this.store.issues().filter((i) => i.severity === 'error').length,
+    () => this.issues().filter((i) => i.severity === 'error').length,
   );
   protected readonly warningCount = computed(
-    () => this.store.issues().filter((i) => i.severity === 'warning').length,
+    () => this.issues().filter((i) => i.severity === 'warning').length,
   );
 
   /** Nodes with the selected ones last, so selection paints on top. */
@@ -1080,8 +1163,25 @@ export class Board {
       output: this.nodeOutput(node),
     })),
   );
+  protected readonly editorTrigger = computed<TriggerContext | null>(() => {
+    const trigger =
+      this.context().find((node) => node.kind === 'trigger') ??
+      (this.inspectNode()?.kind === 'trigger' ? this.inspectNode() : null);
+    if (!trigger) return null;
+    return {
+      id: trigger.id,
+      title: trigger.title,
+      type: trigger.type,
+      channel: this.triggerChannel(trigger),
+      event:
+        typeof trigger.data?.['event'] === 'string'
+          ? trigger.data['event']
+          : undefined,
+    };
+  });
   protected readonly editorExpressionScope = computed<ExpressionScope>(() => ({
     json: this.editorJson(),
+    trigger: this.editorTrigger() ?? undefined,
     nodes: this.editorNodeContexts().map((node) => ({
       title: node.title,
       output: node.output,
@@ -1192,20 +1292,24 @@ export class Board {
     // Prefer the node's real run output; before a run, fall back to the catalog's
     // illustrative output shape so variables are offered while building.
     const output =
-      this.run()?.nodes[node.id]?.output ?? catalogEntry(node.type)?.output;
+      this.run()?.nodes[node.id]?.output ?? this.catalog.sampleOutput(node.type);
     return output === undefined ? [] : variablePaths(output);
   }
 
   protected nodeOutput(node: BoardNode): unknown {
     return (
       this.run()?.nodes[node.id]?.output ??
-      catalogEntry(node.type)?.output ??
+      this.catalog.sampleOutput(node.type) ??
       {}
     );
   }
 
   protected nodeRoot(title: string): string {
     return `$node["${title.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`;
+  }
+
+  protected triggerPaths(): string[] {
+    return variablePaths(this.editorTrigger());
   }
 
   /**
@@ -1235,22 +1339,57 @@ export class Board {
     }
   }
 
+  protected insertTrigger(path?: string): void {
+    const c = this.inspectNode()?.config;
+    if (!c) return;
+    const accessor = !path ? '' : path.startsWith('[') ? path : `.${path}`;
+    const ref = `$trigger${accessor}`;
+    if (c.type === 'switch') {
+      this.setConfig({ ...c, discriminant: `${c.discriminant} ${ref}`.trim() });
+    } else {
+      this.setConfig({ ...c, expression: `${c.expression} ${ref}`.trim() });
+    }
+  }
+
   // ── Generic node parameters (from the catalog) + run data ────────────────
   protected params(node: BoardNode): ParamField[] {
-    return paramSchema(node);
+    return this.catalog.params(node);
   }
 
   protected catalogLabel(node: BoardNode): string {
-    return catalogEntry(node.type)?.label ?? node.category ?? node.kind;
+    return this.catalog.entry(node.type)?.label ?? node.category ?? node.kind;
   }
 
   protected paramValue(node: BoardNode, key: string): string {
     const v = node.data?.[key];
+    if (typeof v === 'object' && v !== null && 'name' in v) {
+      return String((v as { name?: unknown }).name ?? '');
+    }
     return v == null ? '' : String(v);
   }
 
   protected paramChecked(node: BoardNode, key: string): boolean {
     return node.data?.[key] === true;
+  }
+
+  protected paramInputType(type: ParamType): string {
+    if (type === 'number') return 'number';
+    if (type === 'secret' || type === 'credential') return 'password';
+    if (type === 'url') return 'url';
+    return 'text';
+  }
+
+  protected async onParamFile(key: string, event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    const text = file.type.startsWith('text/') ? await file.text() : undefined;
+    this.patchParam(key, {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      text,
+    });
   }
 
   protected patchParam(key: string, value: unknown): void {
@@ -1269,6 +1408,14 @@ export class Board {
     const current = String(this.inspectNode()?.data?.[key] ?? '');
     const ref = this.contextRef(node.title, path, true);
     this.patchParam(key, `${current} ${ref}`.trim());
+  }
+
+  private triggerChannel(node: BoardNode): string {
+    const configured = node.data?.['channel'];
+    if (typeof configured === 'string' && configured.trim()) {
+      return configured.trim();
+    }
+    return (node.type ?? node.title).replace(/-trigger$/, '').toLowerCase();
   }
 
   /** The inspected node's state in the current run (for the Data section). */
@@ -1292,6 +1439,10 @@ export class Board {
     )}`;
   }
 
+  protected passOutputCount(outputs: Record<string, unknown>): number {
+    return Object.keys(outputs).length;
+  }
+
   // ── Run (via the injected backend) ───────────────────────────────────────
   protected toggleRun(): void {
     if (this.running()) this.stopRun();
@@ -1302,10 +1453,23 @@ export class Board {
     if (!this.backend) return;
     this.disposeRun();
     this.showLog.set(true);
-    const runId = this.backend.startRun(this.store.toPipeline());
-    this.runUnsub = this.backend.observe(runId, (snapshot) =>
-      this.run.set(snapshot),
-    );
+    const pipeline = this.store.toPipeline();
+    const startedAt = Date.now();
+    let recorded = false;
+    const runId = this.backend.startRun(pipeline);
+    this.runUnsub = this.backend.observe(runId, (snapshot) => {
+      this.run.set(snapshot);
+      if (!recorded && isTerminalRun(snapshot.status)) {
+        recorded = true;
+        this.recordRun({
+          runId: snapshot.runId,
+          pipelineId: pipeline.id,
+          status: snapshot.status,
+          startedAt,
+          finishedAt: Date.now(),
+        });
+      }
+    });
   }
 
   protected stopRun(): void {
@@ -1365,6 +1529,24 @@ export class Board {
     this.savedTimer = setTimeout(() => this.justSaved.set(false), 1500);
   }
 
+  protected async duplicatePipeline(): Promise<void> {
+    if (!this.persistence || this.readonly()) return;
+    const pipeline = this.store.toPipeline();
+    const suffix = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
+    const copy: Pipeline = {
+      ...pipeline,
+      id: `${pipeline.id}-copy-${suffix}`,
+      name: `${pipeline.name} Copy`,
+      nodes: pipeline.nodes.map((node) => ({ ...node, data: { ...node.data } })),
+      edges: pipeline.edges.map((edge) => ({ ...edge })),
+    };
+    await this.persistence.save(copy);
+    this.store.load(copy);
+    this.justSaved.set(true);
+    clearTimeout(this.savedTimer);
+    this.savedTimer = setTimeout(() => this.justSaved.set(false), 1500);
+  }
+
   private queueAutosave(pipeline: Pipeline): void {
     clearTimeout(this.autosaveTimer);
     this.autosaveTimer = setTimeout(() => {
@@ -1377,6 +1559,45 @@ export class Board {
     if (!this.persistence) return;
     this.savedPipelines.set(await this.persistence.list());
     this.showOpen.set(true);
+  }
+
+  protected async openHistory(): Promise<void> {
+    if (!this.persistence) return;
+    await this.loadRunHistory();
+    this.showHistory.set(true);
+  }
+
+  private async loadRunHistory(): Promise<void> {
+    if (!this.persistence) return;
+    this.runHistory.set(
+      await this.persistence.runHistory(this.store.toPipeline().id),
+    );
+  }
+
+  private recordRun(summary: RunSummary): void {
+    if (!canRecordRuns(this.persistence)) return;
+    this.persistence.recordRun(summary);
+    if (this.showHistory()) void this.loadRunHistory();
+  }
+
+  protected runDuration(run: RunSummary): string {
+    if (!run.finishedAt) return 'Running';
+    const ms = Math.max(0, run.finishedAt - run.startedAt);
+    if (ms < 1000) return `${ms} ms`;
+    return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
+  }
+
+  protected runStatusClass(status: RunStatus): string {
+    if (status === 'success') {
+      return 'text-[var(--success)] bg-[var(--success-quiet)]';
+    }
+    if (status === 'error') {
+      return 'text-[var(--danger)] bg-[var(--danger-quiet)]';
+    }
+    if (status === 'canceled') {
+      return 'text-[var(--warning)] bg-[var(--warning-quiet)]';
+    }
+    return 'text-[var(--accent)] bg-[var(--accent-quiet)]';
   }
 
   /** Load a saved pipeline into the board and close the picker. */
@@ -1405,6 +1626,119 @@ export class Board {
 
   protected toggleIssues(): void {
     this.showIssues.update((v) => !v);
+  }
+
+  private catalogIssues(): ValidationIssue[] {
+    const issues: ValidationIssue[] = [];
+    for (const node of this.store.nodes()) {
+      issues.push(...this.controlFlowIssues(node));
+      for (const param of this.catalog.params(node)) {
+        if (!this.paramVisible(node, param)) continue;
+        const raw = node.data?.[param.key] ?? param.defaultValue;
+        const value = typeof raw === 'string' ? raw.trim() : raw;
+        if (param.required && this.paramEmpty(value)) {
+          issues.push({
+            severity: 'error',
+            code: 'required-param',
+            message: `"${node.title}" requires ${param.label}`,
+            nodeId: node.id,
+          });
+          continue;
+        }
+        if (typeof value !== 'string' || !value) continue;
+        if (param.type === 'url' && !value.includes('{{') && !validUrl(value)) {
+          issues.push({
+            severity: 'error',
+            code: 'invalid-url',
+            message: `"${node.title}" has an invalid ${param.label} URL`,
+            nodeId: node.id,
+          });
+        }
+        if (
+          (param.type === 'json' ||
+            param.type === 'array' ||
+            param.type === 'object') &&
+          !value.includes('{{') &&
+          !validJson(value, param.type)
+        ) {
+          issues.push({
+            severity: 'error',
+            code: 'invalid-json',
+            message: `"${node.title}" has invalid ${param.label} JSON`,
+            nodeId: node.id,
+          });
+        }
+        if (param.type === 'code' && unsupportedBrowserApi(value)) {
+          issues.push({
+            severity: 'warning',
+            code: 'unsupported-browser-api',
+            message: `"${node.title}" uses browser APIs that may not exist in a real backend`,
+            nodeId: node.id,
+          });
+        }
+      }
+    }
+    return issues;
+  }
+
+  private controlFlowIssues(node: BoardNode): ValidationIssue[] {
+    if (!isControlFlow(node) || !node.config) return [];
+    const issues: ValidationIssue[] = [];
+    const config = node.config;
+    if (
+      (config.type === 'if' || config.type === 'filter') &&
+      !config.expression.trim()
+    ) {
+      issues.push({
+        severity: 'error',
+        code: 'missing-expression',
+        message: `"${node.title}" needs a condition expression`,
+        nodeId: node.id,
+      });
+    }
+    if (config.type === 'switch') {
+      if (!config.discriminant.trim()) {
+        issues.push({
+          severity: 'error',
+          code: 'missing-discriminant',
+          message: `"${node.title}" needs a switch discriminant`,
+          nodeId: node.id,
+        });
+      }
+      const values = new Set<string>();
+      for (const branch of config.cases) {
+        const value = branch.value.trim();
+        if (!value) {
+          issues.push({
+            severity: 'error',
+            code: 'missing-switch-case',
+            message: `"${node.title}" has an empty switch case`,
+            nodeId: node.id,
+          });
+        } else if (values.has(value)) {
+          issues.push({
+            severity: 'warning',
+            code: 'duplicate-switch-case',
+            message: `"${node.title}" has duplicate switch case "${value}"`,
+            nodeId: node.id,
+          });
+        }
+        values.add(value);
+      }
+    }
+    return issues;
+  }
+
+  private paramVisible(node: BoardNode, param: ParamField): boolean {
+    if (!param.visibleWhen) return true;
+    return node.data?.[param.visibleWhen.key] === param.visibleWhen.equals;
+  }
+
+  private paramEmpty(value: unknown): boolean {
+    if (value == null) return true;
+    if (typeof value === 'string') return !value.trim();
+    if (Array.isArray(value)) return value.length === 0;
+    return false;
   }
 
   protected focusIssue(issue: ValidationIssue): void {

@@ -2,8 +2,10 @@ import type { BoardNode, ControlFlowConfig } from '@tsai-pe/models';
 import {
   catalogEntry,
   controlFlowOutputs,
+  createStaticNodeCatalog,
   defaultControlFlowConfig,
   derivePorts,
+  inferOutputSchema,
   isControlFlow,
   NODE_CATALOG,
   paramSchema,
@@ -123,6 +125,63 @@ describe('catalogEntry', () => {
   it('returns undefined for unknown or missing ids', () => {
     expect(catalogEntry('nope')).toBeUndefined();
     expect(catalogEntry(undefined)).toBeUndefined();
+  });
+});
+
+describe('createStaticNodeCatalog', () => {
+  it('creates an isolated catalog adapter for injected/mock catalogs', () => {
+    const catalog = createStaticNodeCatalog(
+      [
+        {
+          id: 'custom-trigger',
+          label: 'Custom Trigger',
+          kind: 'trigger',
+          params: [{ key: 'topic', label: 'Topic', type: 'text' }],
+          output: { topic: 'demo' },
+        },
+      ],
+      'custom-v1',
+    );
+
+    expect(catalog.version).toBe('custom-v1');
+    expect(catalog.specs()).toHaveLength(1);
+    expect(catalog.entry('custom-trigger')?.label).toBe('Custom Trigger');
+    expect(catalog.params({ kind: 'trigger', type: 'custom-trigger' })).toEqual(
+      [{ key: 'topic', label: 'Topic', type: 'text' }],
+    );
+  });
+
+  it('exposes inferred output schemas separately from sample output', () => {
+    const catalog = createStaticNodeCatalog([
+      {
+        id: 'sample',
+        label: 'Sample',
+        kind: 'trigger',
+        params: [],
+        output: { body: { ok: true }, items: [{ id: 1 }] },
+      },
+    ]);
+
+    expect(catalog.sampleOutput('sample')).toEqual({
+      body: { ok: true },
+      items: [{ id: 1 }],
+    });
+    expect(catalog.outputSchema('sample')).toEqual({
+      type: 'object',
+      properties: {
+        body: { type: 'object', properties: { ok: { type: 'boolean' } } },
+        items: {
+          type: 'array',
+          items: { type: 'object', properties: { id: { type: 'number' } } },
+        },
+      },
+    });
+  });
+});
+
+describe('inferOutputSchema', () => {
+  it('returns undefined for missing output', () => {
+    expect(inferOutputSchema(undefined)).toBeUndefined();
   });
 });
 

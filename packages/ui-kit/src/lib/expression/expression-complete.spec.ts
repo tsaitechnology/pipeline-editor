@@ -1,6 +1,12 @@
 import { completeAt, ExpressionScope } from './expression-complete';
 
 const scope: ExpressionScope = {
+  trigger: {
+    id: 'tg-trigger',
+    title: 'Telegram',
+    type: 'telegram-trigger',
+    channel: 'telegram',
+  },
   json: {
     checkout: {
       total: 42,
@@ -38,6 +44,15 @@ describe('completeAt', () => {
         },
       ],
     });
+  });
+
+  it('completes trigger metadata paths', () => {
+    const result = completeAt('$trigger.ch', '$trigger.ch'.length, scope);
+
+    expect(result?.from).toBe('$trigger'.length);
+    expect(result?.options.map((option) => option.insert)).toEqual([
+      '.channel',
+    ]);
   });
 
   it('completes json object keys after a dot', () => {

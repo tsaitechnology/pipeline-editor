@@ -7,15 +7,17 @@ import {
   type PipelineBackend,
   type RunListener,
   type RunLogEntry,
+  type RunPassSnapshot,
   type RunSnapshot,
   type RunStatus,
+  type TriggerContext,
   type Unsubscribe,
 } from '@tsai-pe/models';
 import {
-  catalogEntry,
   controlFlowOutputs,
   isControlFlow,
-  paramSchema,
+  type NodeCatalog,
+  STATIC_NODE_CATALOG,
 } from '@tsai-pe/nodes';
 import {
   coerceExpression,
@@ -58,7 +60,67 @@ interface RunState {
    * node executes `inFan` times (its upstream's emitted fan).
    */
   outFan: Record<string, number>;
+  /** Runtime trigger metadata available to expressions as `$trigger`. */
+  trigger?: TriggerContext;
+  /** Immutable-ish outputs captured by trigger pass for inspection. */
+  passes: RunPassSnapshot[];
+  /** Attempt counter by node id within the current trigger pass. */
+  attempts: Record<string, number>;
 }
+
+export type MockSideEffect =
+  | {
+      kind: 'toast';
+      runId: string;
+      nodeId: string;
+      title?: string;
+      message: string;
+      variant: 'info' | 'success' | 'warning' | 'danger';
+      duration?: number;
+    }
+  | {
+      kind: 'dialog';
+      runId: string;
+      nodeId: string;
+      title?: string;
+      body?: string;
+      imageUrl?: string;
+      json?: unknown;
+    }
+  | {
+      kind: 'download';
+      runId: string;
+      nodeId: string;
+      fileName: string;
+      content: string;
+      mimeType: string;
+    }
+  | {
+      kind: 'clipboard';
+      runId: string;
+      nodeId: string;
+      text: string;
+    };
+
+export type MockSideEffectListener = (event: MockSideEffect) => void;
+
+export interface MockPublicApiRequest {
+  preset: string;
+  url: string;
+  timeoutMs: number;
+}
+
+export type MockPublicApiFetcher = (
+  request: MockPublicApiRequest,
+) => Record<string, unknown>;
+
+export interface MockModelLoad {
+  id: string;
+  loaded: boolean;
+  backend: 'mock-wasm';
+}
+
+export type MockModelLoader = (modelId: string) => MockModelLoad;
 
 /** Tuning knobs for the simulation, so tests/demos can run fast or slow. */
 export interface TestBackendOptions {
@@ -85,6 +147,12 @@ export interface TestBackendOptions {
    */
   firingTrigger?:
     string | ((triggers: BoardNode[], runIndex: number) => string);
+  /** Node catalog used for sample trigger outputs and effect param resolution. */
+  catalog?: NodeCatalog;
+  /** Mocked public API fetcher. Defaults to canned browser-safe demo payloads. */
+  publicApiFetcher?: MockPublicApiFetcher;
+  /** Mock lazy model loader for browser-local AI demo nodes. */
+  modelLoader?: MockModelLoader;
 }
 
 /**
@@ -99,6 +167,7 @@ export interface TestBackendOptions {
  */
 export class TestBackendSystem implements PipelineBackend {
   private readonly runs = new Map<string, RunState>();
+  private readonly sideEffectListeners = new Set<MockSideEffectListener>();
   private seq = 0;
 
   private readonly stepDelayMs: number;
@@ -110,6 +179,9 @@ export class TestBackendSystem implements PipelineBackend {
   private readonly tickProgressMs: number;
   private readonly firingTrigger:
     string | ((triggers: BoardNode[], runIndex: number) => string) | undefined;
+  private readonly catalog: NodeCatalog;
+  private readonly publicApiFetcher: MockPublicApiFetcher;
+  private readonly modelLoader: MockModelLoader;
 
   constructor(options: TestBackendOptions = {}) {
     this.stepDelayMs = options.stepDelayMs ?? 400;
@@ -117,6 +189,9 @@ export class TestBackendSystem implements PipelineBackend {
     this.now = options.now ?? (() => Date.now());
     this.tickProgressMs = options.tickProgressMs ?? 0;
     this.firingTrigger = options.firingTrigger;
+    this.catalog = options.catalog ?? STATIC_NODE_CATALOG;
+    this.publicApiFetcher = options.publicApiFetcher ?? cannedPublicApi;
+    this.modelLoader = options.modelLoader ?? cannedModelLoad;
   }
 
   /** Build the trigger queue for this run (see {@link TestBackendOptions.firingTrigger}). */
@@ -127,7 +202,19 @@ export class TestBackendSystem implements PipelineBackend {
     if (typeof this.firingTrigger === 'function') {
       return [this.firingTrigger(triggers, runIndex)];
     }
-    return triggers.map((trigger) => trigger.id);
+    return triggers.flatMap((trigger) =>
+      Array.from({ length: this.triggerPassCount(trigger) }, () => trigger.id),
+    );
+  }
+
+  private triggerPassCount(trigger: BoardNode): number {
+    if (trigger.type === 'interval-trigger') {
+      return clampInt(trigger.data?.['maxTicks'], 3, 1, 20);
+    }
+    if (trigger.type === 'schedule-trigger') {
+      return clampInt(trigger.data?.['demoTicks'], 1, 1, 10);
+    }
+    return 1;
   }
 
   startRun(pipeline: Pipeline): string {
@@ -148,8 +235,11 @@ export class TestBackendSystem implements PipelineBackend {
       outputs: {},
       selected: {},
       outFan: {},
+      trigger: undefined,
       triggerIds: this.triggerQueue(pipeline, this.seq - 1),
       triggerIndex: 0,
+      passes: [],
+      attempts: {},
     };
     this.runs.set(runId, run);
 
@@ -208,6 +298,13 @@ export class TestBackendSystem implements PipelineBackend {
     this.finish(run, 'canceled');
   }
 
+  observeSideEffects(listener: MockSideEffectListener): Unsubscribe {
+    this.sideEffectListeners.add(listener);
+    return () => {
+      this.sideEffectListeners.delete(listener);
+    };
+  }
+
   // --- simulation -----------------------------------------------------------
 
   private startTriggerPass(
@@ -219,6 +316,7 @@ export class TestBackendSystem implements PipelineBackend {
     if (run.canceled) return;
     run.triggerIndex = triggerIndex;
     run.firingTriggerId = run.triggerIds[triggerIndex];
+    run.trigger = this.triggerContext(pipeline, run.firingTriggerId);
     this.resetPassState(run, pipeline);
 
     const total = run.triggerIds.length;
@@ -238,6 +336,8 @@ export class TestBackendSystem implements PipelineBackend {
     run.outputs = {};
     run.selected = {};
     run.outFan = {};
+    run.attempts = {};
+    run.trigger = this.triggerContext(pipeline, run.firingTriggerId);
     for (const node of pipeline.nodes) {
       if (node.kind === 'trigger' && node.id !== run.firingTriggerId) continue;
       const nodeRun = run.nodes[node.id];
@@ -289,24 +389,10 @@ export class TestBackendSystem implements PipelineBackend {
     this.log(run, `Running "${node.title}".`, node.id);
     this.emit(run);
 
-    this.schedule(run, this.stepDelayMs, () => {
-      const failure = this.failNode(node, pipeline);
+    this.schedule(run, this.nodeDelayMs(node), () => {
+      const failure = this.nodeFailure(node, pipeline);
       if (failure) {
-        nodeRun.status = 'error';
-        nodeRun.error = String(failure);
-        this.log(run, `Node "${node.title}" failed: ${nodeRun.error}`, node.id);
-
-        // An optional effect failing does not fail the run.
-        const fatal = !(node.kind === 'effect' && node.required === false);
-        if (fatal) {
-          this.emit(run);
-          this.finish(run, 'error');
-          return;
-        }
-        // An optional effect failing does not fail the run — keep going.
-        this.log(run, `(optional — run continues)`, node.id);
-        this.emit(run);
-        this.runNextNode(run, pipeline, order, index + 1);
+        this.failNodeRun(run, pipeline, order, index, node, nodeRun, String(failure));
         return;
       }
 
@@ -336,21 +422,65 @@ export class TestBackendSystem implements PipelineBackend {
 
         this.succeed(run, pipeline, order, index, nodeRun, output);
       } catch (err) {
-        nodeRun.status = 'error';
-        nodeRun.error = `Expression error: ${errorMessage(err)}`;
-        this.log(run, `Node "${node.title}" failed: ${nodeRun.error}`, node.id);
-        const fatal = !(node.kind === 'effect' && node.required === false);
-        if (fatal) {
-          this.emit(run);
-          this.finish(run, 'error');
-          return;
-        }
-        this.log(run, `(optional — run continues)`, node.id);
-        this.emit(run);
-        this.runNextNode(run, pipeline, order, index + 1);
+        this.failNodeRun(
+          run,
+          pipeline,
+          order,
+          index,
+          node,
+          nodeRun,
+          `Expression error: ${errorMessage(err)}`,
+        );
         return;
       }
     });
+  }
+
+  private failNodeRun(
+    run: RunState,
+    pipeline: Pipeline,
+    order: BoardNode[],
+    index: number,
+    node: BoardNode,
+    nodeRun: NodeRun,
+    message: string,
+  ): void {
+    const attempts = clampInt(node.data?.['__retryAttempts'], 1, 1, 10);
+    const current = (run.attempts[node.id] ?? 0) + 1;
+    run.attempts[node.id] = current;
+    if (current < attempts) {
+      nodeRun.status = 'running';
+      nodeRun.error = `Attempt ${current}/${attempts} failed: ${message}`;
+      this.log(
+        run,
+        `Node "${node.title}" retry ${current + 1}/${attempts}: ${message}`,
+        node.id,
+      );
+      this.emit(run);
+      this.schedule(run, clampInt(node.data?.['__retryBackoffMs'], 0, 0, 60_000), () =>
+        this.runNextNode(run, pipeline, order, index),
+      );
+      return;
+    }
+
+    nodeRun.status = 'error';
+    nodeRun.error = message;
+    this.log(run, `Node "${node.title}" failed: ${nodeRun.error}`, node.id);
+    const continueOnError = node.data?.['__continueOnError'] === true;
+    const fatal =
+      !continueOnError && !(node.kind === 'effect' && node.required === false);
+    if (fatal) {
+      this.emit(run);
+      this.finish(run, 'error');
+      return;
+    }
+    const output = { error: message, continued: true };
+    run.outputs[node.id] = output;
+    nodeRun.output = output;
+    this.recordPassOutput(run, node.id, output);
+    this.log(run, `(configured to continue)`, node.id);
+    this.emit(run);
+    this.runNextNode(run, pipeline, order, index + 1);
   }
 
   /** Advance one wave at a time (still `running`), then succeed at N/N. */
@@ -386,11 +516,32 @@ export class TestBackendSystem implements PipelineBackend {
   ): void {
     nodeRun.status = 'success';
     run.outputs[nodeRun.nodeId] = output;
+    this.recordPassOutput(run, nodeRun.nodeId, output);
     // Expose the produced output on the snapshot so the editor can show it (Run
     // data) and derive downstream expression variable paths from it.
     nodeRun.output = output;
+    this.emitSideEffect(run, order[index], output);
     this.emit(run);
     this.runNextNode(run, pipeline, order, index + 1);
+  }
+
+  private recordPassOutput(
+    run: RunState,
+    nodeId: string,
+    output: unknown,
+  ): void {
+    const existing = run.passes.find(
+      (pass) => pass.triggerIndex === run.triggerIndex,
+    );
+    const pass =
+      existing ??
+      ({
+        trigger: run.trigger ? { ...run.trigger } : undefined,
+        triggerIndex: run.triggerIndex,
+        outputs: {},
+      } satisfies RunPassSnapshot);
+    pass.outputs = { ...pass.outputs, [nodeId]: output };
+    if (!existing) run.passes.push(pass);
   }
 
   /** Whether a node should run given upstream success and taken branches. */
@@ -414,7 +565,13 @@ export class TestBackendSystem implements PipelineBackend {
 
   /** Whether an edge is "live": its source succeeded on a taken branch. */
   private edgeActive(run: RunState, edge: Edge): boolean {
-    if (run.nodes[edge.source.nodeId]?.status !== 'success') return false;
+    const output = run.outputs[edge.source.nodeId];
+    const status = run.nodes[edge.source.nodeId]?.status;
+    const continued =
+      output &&
+      typeof output === 'object' &&
+      (output as Record<string, unknown>)['continued'] === true;
+    if (status !== 'success' && !(status === 'error' && continued)) return false;
     if (!(edge.source.nodeId in run.outputs)) return false;
     const selected = run.selected[edge.source.nodeId];
     // Non-branching source: always taken. Branching: only the selected port.
@@ -484,19 +641,15 @@ export class TestBackendSystem implements PipelineBackend {
 
     if (node.kind === 'trigger') {
       run.outFan[node.id] = 1;
-      // Each trigger type emits its own message shape (from the catalog), so
-      // downstream transforms have distinct context variables to normalize.
-      const sample = catalogEntry(node.type)?.output;
-      return sample
-        ? (JSON.parse(JSON.stringify(sample)) as Record<string, unknown>)
-        : { count: 10, source: 'telegram' };
+      return this.triggerOutput(node, run);
     }
 
     if (node.category === 'split') {
-      run.outFan[node.id] = inFan * count;
-      nodeRun.progress = { done: count, total: count };
-      this.log(run, `Split → fan-out ×${count}`, node.id);
-      return { items: Array.from({ length: count }, (_, i) => i) };
+      const items = this.splitItems(node, ctx, count);
+      run.outFan[node.id] = inFan * items.length;
+      nodeRun.progress = { done: items.length, total: items.length };
+      this.log(run, `Split → fan-out ×${items.length}`, node.id);
+      return { items };
     }
     if (node.category === 'merge') {
       const total = inFan > 1 ? inFan : (node.bufferSize ?? count);
@@ -516,8 +669,49 @@ export class TestBackendSystem implements PipelineBackend {
     if (node.category === 'control-flow') {
       return { branch: run.selected[node.id] };
     }
+    if (node.category === 'integration') return this.integrationOutput(node);
     if (node.category === 'transform') return this.transformOutput(node, ctx);
     return { ok: true, count };
+  }
+
+  private integrationOutput(node: BoardNode): unknown {
+    if (node.type === 'public-api-request') {
+      const preset = stringValue(node.data?.['preset']) ?? 'jsonplaceholder';
+      const url =
+        preset === 'custom'
+          ? (stringValue(node.data?.['url']) ??
+            'https://jsonplaceholder.typicode.com/todos/1')
+          : publicApiPresetUrl(preset);
+      const timeoutMs = clampInt(node.data?.['timeoutMs'], 5000, 100, 60_000);
+      return this.publicApiFetcher({ preset, url, timeoutMs });
+    }
+    if (isAiNode(node.type)) return this.aiOutput(node);
+    const sample = this.catalog.sampleOutput(node.type);
+    return sample ? JSON.parse(JSON.stringify(sample)) : { ok: true };
+  }
+
+  private aiOutput(node: BoardNode): unknown {
+    const model = this.modelLoader(stringValue(node.data?.['model']) ?? node.type ?? 'demo');
+    if (node.type === 'text-classification') {
+      const labels = stringArray(node.data?.['labels'], ['sales', 'support', 'other']);
+      return { model, label: labels[1] ?? labels[0] ?? 'other', confidence: 0.92 };
+    }
+    if (node.type === 'sentiment-classifier') {
+      return { model, sentiment: 'positive', priority: 'normal', toxicity: 0.01, confidence: 0.88 };
+    }
+    if (node.type === 'ocr-image-recognition') {
+      return {
+        model,
+        text: 'Invoice #1001',
+        classes: [{ label: 'document', confidence: 0.94 }],
+      };
+    }
+    return {
+      model,
+      score: 0.82,
+      embedding: [0.12, -0.08, 0.31],
+      similar: true,
+    };
   }
 
   /**
@@ -535,19 +729,223 @@ export class TestBackendSystem implements PipelineBackend {
       const value = resolveTemplate(String(node.data?.['value'] ?? ''), ctx);
       return { ...base, [field]: value };
     }
+    if (node.type === 'json-query') {
+      return this.jsonQueryOutput(node, ctx, base);
+    }
+    if (node.type === 'throttle' || node.type === 'debounce') {
+      return {
+        ...base,
+        [node.type === 'throttle' ? 'throttled' : 'debounced']: true,
+        windowMs: clampInt(node.data?.['windowMs'], 1000, 1, 60_000),
+        key: resolveTemplate(String(node.data?.['key'] ?? '{{ $trigger.id }}'), ctx),
+      };
+    }
+    if (node.type === 'repeat') {
+      const count = clampInt(node.data?.['count'], 1, 1, 100);
+      const template = String(node.data?.['item'] ?? '{{ $json }}');
+      return {
+        ...base,
+        count,
+        items: Array.from({ length: count }, (_, index) => ({
+          index,
+          value: template.includes('{{')
+            ? resolveTemplate(template, ctx)
+            : coerceExpression(template, ctx),
+        })),
+      };
+    }
+    if (node.type === 'csv-parse') {
+      return {
+        ...base,
+        items: parseCsv(
+          String(
+            resolveTemplate(String(node.data?.['csv'] ?? '{{ $json.csv }}'), ctx) ??
+              '',
+          ),
+          String(node.data?.['delimiter'] ?? ',') || ',',
+          node.data?.['headers'] !== false,
+        ),
+      };
+    }
+    if (node.type === 'markdown-render') {
+      const markdown = String(
+        resolveTemplate(
+          String(node.data?.['markdown'] ?? '{{ $json.markdown }}'),
+          ctx,
+        ) ?? '',
+      );
+      return {
+        ...base,
+        markdown,
+        html: markdownToHtml(markdown),
+        text: markdownText(markdown),
+      };
+    }
     return Object.keys(base).length ? base : { value: ctx.json };
+  }
+
+  private jsonQueryOutput(
+    node: BoardNode,
+    ctx: EvalContext,
+    base: Record<string, unknown>,
+  ): unknown {
+    const mode = String(node.data?.['mode'] ?? 'pick');
+    const expression = String(node.data?.['expression'] ?? '$json');
+    if (mode === 'filter-items') {
+      const items = Array.isArray(base['items']) ? base['items'] : [];
+      return {
+        ...base,
+        items: items.filter((item) =>
+          truthy(coerceExpression(expression, { ...ctx, json: item })),
+        ),
+      };
+    }
+
+    const value = expression.includes('{{')
+      ? resolveTemplate(expression, ctx)
+      : coerceExpression(expression, ctx);
+    if (mode === 'replace') return value;
+
+    const field = String(node.data?.['field'] ?? 'result') || 'result';
+    return { ...base, [field]: value };
+  }
+
+  private triggerOutput(node: BoardNode, run: RunState): unknown {
+    const sample = this.catalog.sampleOutput(node.type);
+    const base = sample
+      ? (JSON.parse(JSON.stringify(sample)) as Record<string, unknown>)
+      : { count: 10, source: 'telegram' };
+    const tick = triggerTick(run);
+
+    if (node.type === 'interval-trigger') {
+      return {
+        ...base,
+        tick,
+        intervalMs: clampInt(node.data?.['intervalMs'], 1000, 1, 60_000),
+        scheduledAt: this.now(),
+        jitterMs: clampInt(node.data?.['jitterMs'], 0, 0, 60_000),
+      };
+    }
+    if (node.type === 'schedule-trigger') {
+      return {
+        ...base,
+        tick,
+        cron: stringValue(node.data?.['cron']) ?? '*/5 * * * *',
+        timezone: stringValue(node.data?.['timezone']) ?? 'UTC',
+        firedAt: this.now(),
+      };
+    }
+    if (node.type === 'file-trigger') {
+      const file = filePayload(node);
+      return { ...base, file, text: file.text };
+    }
+    if (node.type === 'manual-form-trigger') {
+      return {
+        ...base,
+        form: jsonValue(node.data?.['samplePayload'], base['form'] ?? {}),
+      };
+    }
+    if (node.type === 'webhook-trigger') {
+      return {
+        ...base,
+        method: stringValue(node.data?.['method']) ?? 'POST',
+        path: stringValue(node.data?.['path']) ?? '/hook',
+        headers: jsonValue(node.data?.['headers'], base['headers'] ?? {}),
+        body: jsonValue(node.data?.['body'], base['body'] ?? {}),
+      };
+    }
+    return base;
   }
 
   /** Effect output: resolve its expression params so the run shows what it sent. */
   private effectOutput(node: BoardNode, ctx: EvalContext): unknown {
     const out: Record<string, unknown> = { acknowledged: true };
-    for (const param of paramSchema(node)) {
+    for (const param of this.catalog.params(node)) {
       const raw = node.data?.[param.key];
-      if (param.type === 'expression' && typeof raw === 'string' && raw) {
+      if (typeof raw === 'string' && raw.includes('{{')) {
         out[param.key] = resolveTemplate(raw, ctx);
+      } else if (param.type === 'expression' && typeof raw === 'string' && raw) {
+        out[param.key] = resolveTemplate(raw, ctx);
+      } else if (raw !== undefined) {
+        out[param.key] = raw;
       }
     }
     return out;
+  }
+
+  private nodeDelayMs(node: BoardNode): number {
+    const configured =
+      node.type === 'delay' ? node.data?.['duration'] : node.data?.['__mockDelayMs'];
+    const delay = numberValue(configured);
+    return delay === undefined ? this.stepDelayMs : Math.max(0, delay);
+  }
+
+  private nodeFailure(
+    node: BoardNode,
+    pipeline: Pipeline,
+  ): string | undefined | false {
+    const configured = node.data?.['__mockFailure'];
+    if (typeof configured === 'string' && configured.trim()) {
+      return configured.trim();
+    }
+    return this.failNode(node, pipeline);
+  }
+
+  private emitSideEffect(
+    run: RunState,
+    node: BoardNode,
+    output: unknown,
+  ): void {
+    if (node.kind !== 'effect') return;
+    if (!output || typeof output !== 'object') return;
+    const data = output as Record<string, unknown>;
+    const base = { runId: run.runId, nodeId: node.id };
+
+    let event: MockSideEffect | null = null;
+    if (node.type === 'toast-effect') {
+      event = {
+        ...base,
+        kind: 'toast',
+        title: stringValue(data['title']),
+        message: stringValue(data['message']) ?? node.title,
+        variant: toastVariant(data['variant']),
+        duration: numberValue(data['duration']),
+      };
+    } else if (node.type === 'dialog-result') {
+      event = {
+        ...base,
+        kind: 'dialog',
+        title: stringValue(data['title']) ?? node.title,
+        body: stringValue(data['body']),
+        imageUrl: stringValue(data['imageUrl']),
+        json: data['json'],
+      };
+    } else if (node.type === 'image-preview') {
+      event = {
+        ...base,
+        kind: 'dialog',
+        title: stringValue(data['title']) ?? node.title,
+        body: stringValue(data['caption']),
+        imageUrl: stringValue(data['imageUrl']),
+      };
+    } else if (node.type === 'download-file') {
+      event = {
+        ...base,
+        kind: 'download',
+        fileName: stringValue(data['fileName']) ?? 'pipeline-output.txt',
+        content: contentValue(data['content']),
+        mimeType: stringValue(data['mimeType']) ?? 'text/plain',
+      };
+    } else if (node.type === 'clipboard-effect') {
+      event = {
+        ...base,
+        kind: 'clipboard',
+        text: stringValue(data['text']) ?? '',
+      };
+    }
+
+    if (!event) return;
+    for (const listener of this.sideEffectListeners) listener(event);
   }
 
   /** How many times a node runs: the fan its active upstream emits (≥ 1). */
@@ -578,10 +976,42 @@ export class TestBackendSystem implements PipelineBackend {
     const json = objects.length ? Object.assign({}, ...objects) : inputs[0];
     return {
       json,
+      trigger: run.trigger,
       node: (title) => {
         const found = pipeline.nodes.find((n) => n.title === title);
         return found ? run.outputs[found.id] : undefined;
       },
+    };
+  }
+
+  private splitItems(node: BoardNode, ctx: EvalContext, fallback: number): unknown[] {
+    const raw = node.data?.['items'];
+    if (typeof raw === 'string' && raw.trim()) {
+      const resolved = raw.includes('{{')
+        ? resolveTemplate(raw, ctx)
+        : coerceExpression(raw, ctx);
+      if (Array.isArray(resolved)) return resolved;
+    }
+    return Array.from({ length: fallback }, (_, i) => i);
+  }
+
+  private triggerContext(
+    pipeline: Pipeline,
+    triggerId: string | undefined,
+  ): TriggerContext | undefined {
+    const trigger = triggerId
+      ? pipeline.nodes.find((n) => n.id === triggerId)
+      : pipeline.nodes.find((n) => n.kind === 'trigger');
+    if (!trigger) return undefined;
+    return {
+      id: trigger.id,
+      title: trigger.title,
+      type: trigger.type,
+      channel: triggerChannel(trigger),
+      event:
+        typeof trigger.data?.['event'] === 'string'
+          ? trigger.data['event']
+          : undefined,
     };
   }
 
@@ -690,6 +1120,11 @@ export class TestBackendSystem implements PipelineBackend {
       status: run.status,
       nodes,
       log: run.log.map((entry) => ({ ...entry })),
+      passes: run.passes.map((pass) => ({
+        trigger: pass.trigger ? { ...pass.trigger } : undefined,
+        triggerIndex: pass.triggerIndex,
+        outputs: { ...pass.outputs },
+      })),
     };
   }
 
@@ -708,4 +1143,263 @@ function caseValue(raw: string, ctx: EvalContext): unknown {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function triggerChannel(node: BoardNode): string {
+  const configured = node.data?.['channel'];
+  if (typeof configured === 'string' && configured.trim()) {
+    return configured.trim();
+  }
+  const type = node.type ?? node.title;
+  return type.replace(/-trigger$/, '').toLowerCase();
+}
+
+function stringValue(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  return typeof value === 'string' ? value : String(value);
+}
+
+function clampInt(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(parsed)));
+}
+
+function triggerTick(run: RunState): number {
+  const current = run.firingTriggerId;
+  if (!current) return 1;
+  let tick = 0;
+  for (let i = 0; i <= run.triggerIndex; i++) {
+    if (run.triggerIds[i] === current) tick++;
+  }
+  return Math.max(1, tick);
+}
+
+function jsonValue(value: unknown, fallback: unknown): unknown {
+  if (typeof value !== 'string') return value ?? fallback;
+  if (!value.trim()) return fallback;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return fallback;
+  }
+}
+
+function filePayload(node: BoardNode): {
+  name: string;
+  mime: string;
+  size: number;
+  text?: string;
+} {
+  const raw = node.data?.['file'];
+  if (raw && typeof raw === 'object') {
+    const file = raw as Record<string, unknown>;
+    return {
+      name: stringValue(file['name']) ?? 'sample.txt',
+      mime:
+        stringValue(file['type']) ??
+        stringValue(node.data?.['mime']) ??
+        'text/plain',
+      size: Number(file['size']) || stringValue(file['text'])?.length || 0,
+      text: stringValue(file['text']),
+    };
+  }
+  const text = stringValue(node.data?.['sampleText']) ?? 'id,name\n1,Ada';
+  return {
+    name: 'sample.txt',
+    mime: stringValue(node.data?.['mime']) ?? 'text/plain',
+    size: text.length,
+    text,
+  };
+}
+
+function publicApiPresetUrl(preset: string): string {
+  if (preset === 'hacker-news') {
+    return 'https://hacker-news.firebaseio.com/v0/item/8863.json';
+  }
+  if (preset === 'github-zen') return 'https://api.github.com/zen';
+  return 'https://jsonplaceholder.typicode.com/todos/1';
+}
+
+function cannedPublicApi(request: MockPublicApiRequest): Record<string, unknown> {
+  if (request.preset === 'hacker-news') {
+    return {
+      status: 200,
+      url: request.url,
+      body: {
+        id: 8863,
+        type: 'story',
+        title: 'My YC app: Dropbox',
+        score: 111,
+      },
+      timeoutMs: request.timeoutMs,
+    };
+  }
+  if (request.preset === 'github-zen') {
+    return {
+      status: 200,
+      url: request.url,
+      body: { text: 'Responsive is better than fast.' },
+      timeoutMs: request.timeoutMs,
+    };
+  }
+  return {
+    status: 200,
+    url: request.url,
+    body: { id: 1, title: 'delectus aut autem', completed: false },
+    timeoutMs: request.timeoutMs,
+  };
+}
+
+function isAiNode(type: string | undefined): boolean {
+  return (
+    type === 'text-classification' ||
+    type === 'sentiment-classifier' ||
+    type === 'ocr-image-recognition' ||
+    type === 'embedding-similarity'
+  );
+}
+
+function cannedModelLoad(modelId: string): MockModelLoad {
+  return { id: modelId, loaded: true, backend: 'mock-wasm' };
+}
+
+function stringArray(value: unknown, fallback: string[]): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value !== 'string' || !value.trim()) return fallback;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.map(String) : fallback;
+  } catch {
+    return value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+}
+
+function contentValue(value: unknown): string {
+  if (value == null) return '';
+  return typeof value === 'object' ? JSON.stringify(value) : String(value);
+}
+
+function numberValue(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
+function toastVariant(value: unknown): 'info' | 'success' | 'warning' | 'danger' {
+  return value === 'success' ||
+    value === 'warning' ||
+    value === 'danger' ||
+    value === 'info'
+    ? value
+    : 'info';
+}
+
+function parseCsv(
+  text: string,
+  delimiter: string,
+  headers: boolean,
+): Record<string, string>[] | string[][] {
+  const rows = csvRows(text, delimiter[0] ?? ',').filter((row) =>
+    row.some((cell) => cell.length),
+  );
+  if (!headers) return rows;
+  const [head, ...body] = rows;
+  if (!head) return [];
+  return body.map((row) =>
+    Object.fromEntries(head.map((key, index) => [key, row[index] ?? ''])),
+  );
+}
+
+function csvRows(text: string, delimiter: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') {
+        quoted = false;
+      } else {
+        cell += ch;
+      }
+      continue;
+    }
+
+    if (ch === '"') quoted = true;
+    else if (ch === delimiter) {
+      row.push(cell);
+      cell = '';
+    } else if (ch === '\n') {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = '';
+    } else if (ch !== '\r') {
+      cell += ch;
+    }
+  }
+
+  row.push(cell);
+  rows.push(row);
+  return rows;
+}
+
+function markdownToHtml(markdown: string): string {
+  return markdown
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .map((block) => {
+      if (block.startsWith('### ')) return `<h3>${inlineMd(block.slice(4))}</h3>`;
+      if (block.startsWith('## ')) return `<h2>${inlineMd(block.slice(3))}</h2>`;
+      if (block.startsWith('# ')) return `<h1>${inlineMd(block.slice(2))}</h1>`;
+      const lines = block.split('\n');
+      if (lines.every((line) => line.startsWith('- '))) {
+        return `<ul>${lines
+          .map((line) => `<li>${inlineMd(line.slice(2))}</li>`)
+          .join('')}</ul>`;
+      }
+      return `<p>${inlineMd(block.replace(/\n/g, '<br>'))}</p>`;
+    })
+    .join('');
+}
+
+function inlineMd(value: string): string {
+  return escapeHtml(value)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+}
+
+function markdownText(markdown: string): string {
+  return markdown
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^-\s+/gm, '')
+    .replace(/[`*_]/g, '')
+    .trim();
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }

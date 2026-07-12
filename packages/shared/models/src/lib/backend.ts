@@ -24,11 +24,32 @@ export interface NodeRun {
   progress?: { done: number; total: number };
 }
 
+/** Runtime metadata about the trigger event currently driving a node/run pass. */
+export interface TriggerContext {
+  /** Trigger node id in the pipeline document. */
+  id: string;
+  /** Human-readable trigger node title. */
+  title: string;
+  /** Concrete catalog type id, e.g. `telegram-trigger`. */
+  type?: string;
+  /** Stable channel/name for branching, e.g. `telegram`, `whatsapp`, `webhook`. */
+  channel: string;
+  /** Configured trigger event name when provided by the node/backend. */
+  event?: string;
+}
+
 /** A single line in the run log. */
 export interface RunLogEntry {
   at: number;
   nodeId?: string;
   message: string;
+}
+
+/** Outputs captured for one trigger pass in a multi-trigger run. */
+export interface RunPassSnapshot {
+  trigger?: TriggerContext;
+  triggerIndex: number;
+  outputs: Record<string, unknown>;
 }
 
 /** An immutable snapshot of a run, pushed to observers on every change. */
@@ -37,6 +58,8 @@ export interface RunSnapshot {
   status: RunStatus;
   nodes: Record<string, NodeRun>;
   log: RunLogEntry[];
+  /** Per-trigger-pass outputs, useful for inspecting multi-trigger runs. */
+  passes?: RunPassSnapshot[];
 }
 
 export type RunListener = (snapshot: RunSnapshot) => void;

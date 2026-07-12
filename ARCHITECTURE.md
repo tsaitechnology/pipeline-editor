@@ -201,9 +201,11 @@ The `<pe-board>` component: wires `BoardStore` to the `board/ui` components,
 handles keyboard/mouse (pan/zoom with right/middle/Space, marquee selection,
 drag-and-drop from the catalog palette, copy/paste, undo/redo, hotkeys, resize,
 context menu, alignment guides, delete-safety), draws the minimap and the
-inspector (params from the catalog + Run data), the issues panel and the run log.
-It injects the backend via the `PIPELINE_BACKEND` token and observes the run.
-Modals/buttons come from `ui-kit`.
+issues panel and the run log. The node editor is a wide modal: left side shows
+pipeline context (`$json`, `$trigger`, `$node["Title"]`) with draggable JSON
+paths; right side renders catalog-driven params, control-flow config, mock runtime
+knobs, effect settings and run output. It injects the backend via the
+`PIPELINE_BACKEND` token and observes the run. Modals/buttons come from `ui-kit`.
 
 Depends on: `board/core`, `board/ui`, `ui-kit`, `shared/models`, `shared/nodes`.
 
@@ -239,22 +241,31 @@ idle → running → success/error/skipped. It models:
 
 - **real expressions** — triggers are fake (they push a shape from the catalog
   immediately), but the mock **evaluates** the expression language (`expression.ts`,
-  no `eval`): `$json` / `$node["Title"]`, path access, operators, `{{ }}` templates.
-  So control-flow (if/switch/filter) really routes, Set Fields extracts a field
-  from context, and effects resolve their params. Reading into a changed shape (a
-  missing path) **throws** → the node fails (as in n8n) — fatal, except for an
-  optional effect; the error is highlighted on the node and in the inspector. This
-  exercises the language itself;
-- **one firing trigger per run** — a pipeline may have several triggers, but an
-  event enters from one channel: the mock picks one (round-robin per Run click, or
-  explicitly), the rest are `skipped`, so routing "by trigger" is meaningful;
+  no `eval`): `$json` / `$trigger` / `$node["Title"]`, path access, operators,
+  `{{ }}` templates. So control-flow (if/switch/filter) really routes, Set Fields,
+  JSON Query, CSV Parse and Markdown Render transform context, and effects resolve
+  their params. Reading into a changed shape (a missing path) **throws** → the node
+  fails (as in n8n) — fatal, except for an optional effect; the error is highlighted
+  on the node and in the inspector. This exercises the language itself;
+- **sequential triggers** — a pipeline may have several triggers. A single Run
+  plays all triggers as a queue: trigger 1 fires → reachable graph runs → trigger 2
+  fires → reachable graph runs, etc. `TestBackendOptions.firingTrigger` can still
+  force one trigger for tests/demos. The active event is exposed as `$trigger`
+  (`id`, `title`, `type`, `channel`, `event`) so switches can route by trigger
+  channel independently from payload shape;
 - **control-flow** — only the "taken" branch runs; nodes behind an untaken branch
   are `skipped`;
 - **`split → merge` fan-out** — `split ×N` fans the stream out (each node between
   split and merge runs N times, progress n/n, "×N" in the log), `merge` collapses
   back to 1;
+- **browser demo effects** — mock-only side-effect events (`toast`, `dialog`,
+  `download`, `clipboard`) are emitted by the mock backend but rendered by the
+  playground. The board package stays backend-agnostic and never owns browser side
+  effects;
+- **mock runtime knobs** — any node may set `__mockDelayMs` and `__mockFailure`
+  through the inspector; the `delay` node uses the same timing path explicitly;
 - **errors** — fatal ones fail the run; an optional `effect` (`required: false`,
-  e.g. a logger) does not.
+  e.g. a logger or visual side effect) does not.
 
 A real REST/WS adapter is just another implementation of the same port; the editor
 can't tell them apart. It is injected into `<pe-board>` via `PIPELINE_BACKEND`.
@@ -263,10 +274,12 @@ can't tell them apart. It is injected into `<pe-board>` via `PIPELINE_BACKEND`.
 
 A port separate from running (`shared/models/store.ts`): `save` / `load` / `list` /
 `remove` pipelines + `runHistory`. It is **async** (Promise-based) — persistence is
-inherently remote (unlike the sync run port). `InMemoryPipelineStore`
-(`workflow/mock`) is an in-browser implementation: it deep-clones documents on the
-way in and out, so stored state can't be mutated by reference. A real REST store is
-another implementation of the same port.
+inherently remote (unlike the sync run port). `InMemoryPipelineStore` and
+`LocalStoragePipelineStore` (`workflow/mock`) are in-browser implementations: they
+deep-clone documents on the way in and out, so stored state can't be mutated by
+reference. The playground uses localStorage to preserve edits across refreshes and
+seeds the demo only when storage is empty. A real REST store is another
+implementation of the same port.
 
 ### `workflow/http` — `RestWsBackend` (type:core)
 
@@ -390,8 +403,11 @@ The registry (n8n-style) is read by both the editor and the future engine:
 ## 9. Playground
 
 `apps/playground` (`scope:app`, `type:app`) is a minimal app for local development
-and e2e (Playwright). It mounts `<pe-board>` on the `/board` route and injects
-`TestBackendSystem` via `PIPELINE_BACKEND`. Not published.
+and e2e (Playwright). It mounts `<pe-board>` on the `/board` route, injects
+`TestBackendSystem` via `PIPELINE_BACKEND`, injects `LocalStoragePipelineStore` via
+`PIPELINE_STORE`, renders mock side-effect events (toast/dialog/download/clipboard)
+and provides a Reset button that clears storage back to the seed pipeline. Not
+published.
 
 ---
 

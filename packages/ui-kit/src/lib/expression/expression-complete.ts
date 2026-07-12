@@ -5,6 +5,7 @@ export interface ExpressionNodeScope {
 
 export interface ExpressionScope {
   json?: unknown;
+  trigger?: unknown;
   nodes?: ExpressionNodeScope[];
 }
 
@@ -53,6 +54,16 @@ export function completeAt(
     );
   }
 
+  if (token.startsWith('$trigger')) {
+    return pathCompletion(
+      scope.trigger,
+      token.slice('$trigger'.length),
+      '$trigger'.length,
+      tokenStart,
+      safeCaret,
+    );
+  }
+
   const nodeMatch = /^\$node\["((?:\\.|[^"\\])*)"\](.*)$/.exec(token);
   if (nodeMatch) {
     const title = unescapeText(nodeMatch[1]);
@@ -83,6 +94,15 @@ function rootCompletion(
       label: '$json',
       insert: '$json',
       detail: typeName(scope.json),
+      kind: 'root',
+    });
+  }
+
+  if ('$trigger'.startsWith(token) && scope.trigger !== undefined) {
+    options.push({
+      label: '$trigger',
+      insert: '$trigger',
+      detail: typeName(scope.trigger),
       kind: 'root',
     });
   }

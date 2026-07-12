@@ -273,6 +273,14 @@
     <button type="button" [class]="cls.toolbarBtn" (click)="openPicker()">
       Open
     </button>
+    @if (!readonly()) {
+    <button type="button" [class]="cls.toolbarBtn" (click)="duplicatePipeline()">
+      Duplicate
+    </button>
+    }
+    <button type="button" [class]="cls.toolbarBtn" (click)="openHistory()">
+      History
+    </button>
     <span class="w-px my-[3px] mx-0.5 bg-[var(--border)]"></span>
     }
     <button type="button" [class]="cls.toolbarBtn" (click)="exportJson()">
@@ -302,13 +310,13 @@
     </button>
   </div>
 
-  @if (showIssues() && store.issues().length) {
+  @if (showIssues() && issues().length) {
   <div
     class="absolute right-3 top-[54px] z-[18] w-[260px] max-h-[40%] overflow-y-auto flex flex-col gap-px p-1.5 border border-[var(--border)] rounded-[var(--r-md)] bg-[var(--surface-2)] shadow-[var(--elev-2)]"
     (pointerdown)="$event.stopPropagation()"
     (wheel)="$event.stopPropagation()"
   >
-    @for (issue of store.issues(); track $index) {
+    @for (issue of issues(); track $index) {
     <button
       type="button"
       class="flex px-[9px] py-[7px] text-xs text-left rounded-[var(--r-sm)] cursor-pointer transition-colors duration-150 hover:bg-[var(--surface-3)]"
@@ -458,6 +466,31 @@
       #logScroll
       class="flex-1 overflow-y-auto px-3 py-2 flex flex-col gap-0.5 font-mono text-[11px] text-text-2 select-text cursor-text"
     >
+      @if (r.passes?.length) {
+      <div class="mb-2 flex flex-col gap-1 font-sans">
+        @for (pass of r.passes; track pass.triggerIndex) {
+        <div
+          class="rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--surface-1)] px-2 py-1"
+        >
+          <div class="flex items-center justify-between gap-2">
+            <span class="truncate text-[11px] font-semibold text-text">
+              Pass {{ pass.triggerIndex + 1 }} · {{ pass.trigger?.title ??
+              'manual' }}
+            </span>
+            <span class="shrink-0 text-[10px] text-text-3">
+              {{ passOutputCount(pass.outputs) }} output{{
+              passOutputCount(pass.outputs) === 1 ? '' : 's' }}
+            </span>
+          </div>
+          @if (pass.trigger) {
+          <div class="mt-0.5 truncate font-mono text-[10px] text-text-3">
+            $trigger.channel={{ pass.trigger.channel }}
+          </div>
+          }
+        </div>
+        }
+      </div>
+      }
       @for (e of logEntries(); track $index) {
       <div class="flex gap-2">
         <span class="shrink-0 text-text-3 tabular-nums"
@@ -649,6 +682,24 @@
               </div>
             </section>
 
+            @if (editorTrigger(); as trigger) {
+            <section>
+              <div
+                class="mb-2 truncate font-mono text-xs font-semibold text-warning"
+              >
+                $trigger
+              </div>
+              <div class="rounded-sm border border-border bg-surface-1 p-2">
+                <tsai-json-view
+                  [data]="trigger"
+                  root="$trigger"
+                  [autoExpandDepth]="2"
+                  [draggable]="!readonly()"
+                />
+              </div>
+            </section>
+            }
+
             @for (cn of editorNodeContexts(); track cn.id) {
             <section>
               <div
@@ -699,6 +750,68 @@
               />
             </label>
 
+            <div class="h-px bg-[var(--border)]"></div>
+            <span class="text-xs font-semibold text-text-2">Mock runtime</span>
+            <div class="grid grid-cols-2 gap-3">
+              <label [class]="cls.field">
+                <span [class]="cls.fieldLabel">Delay ms</span>
+                <input
+                  [class]="cls.fieldInput"
+                  type="number"
+                  min="0"
+                  placeholder="default"
+                  [value]="paramValue(n, '__mockDelayMs')"
+                  [disabled]="readonly() || n.type === 'delay'"
+                  (change)="patchParam('__mockDelayMs', $any($event.target).value)"
+                />
+              </label>
+              <label [class]="cls.field">
+                <span [class]="cls.fieldLabel">Fail message</span>
+                <input
+                  [class]="cls.fieldInput"
+                  type="text"
+                  placeholder="none"
+                  [value]="paramValue(n, '__mockFailure')"
+                  [disabled]="readonly()"
+                  (change)="patchParam('__mockFailure', $any($event.target).value)"
+                />
+              </label>
+              <label [class]="cls.field">
+                <span [class]="cls.fieldLabel">Attempts</span>
+                <input
+                  [class]="cls.fieldInput"
+                  type="number"
+                  min="1"
+                  max="10"
+                  placeholder="1"
+                  [value]="paramValue(n, '__retryAttempts')"
+                  [disabled]="readonly()"
+                  (change)="patchParam('__retryAttempts', $any($event.target).value)"
+                />
+              </label>
+              <label [class]="cls.field">
+                <span [class]="cls.fieldLabel">Backoff ms</span>
+                <input
+                  [class]="cls.fieldInput"
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  [value]="paramValue(n, '__retryBackoffMs')"
+                  [disabled]="readonly()"
+                  (change)="patchParam('__retryBackoffMs', $any($event.target).value)"
+                />
+              </label>
+            </div>
+            <label class="flex flex-row items-center gap-2">
+              <input
+                type="checkbox"
+                [checked]="paramChecked(n, '__continueOnError')"
+                [disabled]="readonly()"
+                (change)="patchParam('__continueOnError', $any($event.target).checked)"
+              />
+              <span [class]="cls.fieldLabel">Continue on error</span>
+            </label>
+
             @if (!isCf(n) && params(n).length) {
             <div class="h-px bg-[var(--border)]"></div>
             <span class="text-xs font-semibold text-text-2">Parameters</span>
@@ -743,6 +856,68 @@
                 (change)="patchParam(f.key, $any($event.target).value)"
               ></textarea>
             </label>
+            } @case ('json') {
+            <label [class]="cls.field">
+              <span [class]="cls.fieldLabel">{{ f.label }}</span>
+              <textarea
+                [class]="cls.fieldInput + ' font-mono min-h-[88px]'"
+                [placeholder]="f.placeholder ?? '{ }'"
+                [value]="paramValue(n, f.key)"
+                [disabled]="readonly()"
+                (change)="patchParam(f.key, $any($event.target).value)"
+              ></textarea>
+              @if (f.help) {
+              <span [class]="cls.hint">{{ f.help }}</span>
+              }
+            </label>
+            } @case ('array') {
+            <label [class]="cls.field">
+              <span [class]="cls.fieldLabel">{{ f.label }}</span>
+              <textarea
+                [class]="cls.fieldInput + ' font-mono min-h-[72px]'"
+                [placeholder]="f.placeholder ?? '[ ]'"
+                [value]="paramValue(n, f.key)"
+                [disabled]="readonly()"
+                (change)="patchParam(f.key, $any($event.target).value)"
+              ></textarea>
+            </label>
+            } @case ('object') {
+            <label [class]="cls.field">
+              <span [class]="cls.fieldLabel">{{ f.label }}</span>
+              <textarea
+                [class]="cls.fieldInput + ' font-mono min-h-[72px]'"
+                [placeholder]="f.placeholder ?? '{ }'"
+                [value]="paramValue(n, f.key)"
+                [disabled]="readonly()"
+                (change)="patchParam(f.key, $any($event.target).value)"
+              ></textarea>
+            </label>
+            } @case ('code') {
+            <label [class]="cls.field">
+              <span [class]="cls.fieldLabel">{{ f.label }}</span>
+              <textarea
+                [class]="cls.fieldInput + ' font-mono min-h-[96px]'"
+                [placeholder]="f.placeholder ?? ''"
+                [value]="paramValue(n, f.key)"
+                [disabled]="readonly()"
+                (change)="patchParam(f.key, $any($event.target).value)"
+              ></textarea>
+            </label>
+            } @case ('file') {
+            <label [class]="cls.field">
+              <span [class]="cls.fieldLabel">{{ f.label }}</span>
+              <input
+                [class]="cls.fieldInput"
+                type="file"
+                [accept]="f.accept ?? ''"
+                [multiple]="f.multiple === true"
+                [disabled]="readonly()"
+                (change)="onParamFile(f.key, $event)"
+              />
+              @if (paramValue(n, f.key)) {
+              <span [class]="cls.hint">{{ paramValue(n, f.key) }}</span>
+              }
+            </label>
             } @default {
             <div [class]="cls.field">
               <span [class]="cls.fieldLabel">{{ f.label }}</span>
@@ -758,7 +933,10 @@
               } @else {
               <input
                 [class]="cls.fieldInput"
-                [type]="f.type === 'number' ? 'number' : 'text'"
+                [type]="paramInputType(f.type)"
+                [min]="f.min ?? null"
+                [max]="f.max ?? null"
+                [step]="f.step ?? null"
                 [placeholder]="f.placeholder ?? ''"
                 [value]="paramValue(n, f.key)"
                 [disabled]="readonly()"
@@ -900,10 +1078,31 @@
               />
               <span [class]="cls.fieldLabel">Default branch</span>
             </label>
-            } @if (context().length) {
+            } @if (context().length || editorTrigger()) {
             <div [class]="cls.field">
               <span [class]="cls.fieldLabel">Pipeline context</span>
               <div class="flex flex-wrap gap-1">
+                @if (editorTrigger()) {
+                <button
+                  type="button"
+                  class="px-2 py-1 font-mono text-[11px] rounded-full border border-[var(--border)] text-warning cursor-pointer hover:bg-[var(--surface-3)] disabled:opacity-50"
+                  title="Insert a reference to $trigger"
+                  [disabled]="readonly()"
+                  (click)="insertTrigger()"
+                >
+                  $trigger
+                </button>
+                @for (p of triggerPaths(); track p) {
+                <button
+                  type="button"
+                  class="px-2 py-1 font-mono text-[11px] rounded-full border border-[var(--border)] text-warning cursor-pointer hover:bg-[var(--surface-3)] disabled:opacity-50"
+                  [title]="'Insert $trigger.' + p"
+                  [disabled]="readonly()"
+                  (click)="insertTrigger(p)"
+                >
+                  .{{ p }}
+                </button>
+                } }
                 @for (cn of context(); track cn.id) {
                 <button
                   type="button"
@@ -999,6 +1198,36 @@
     </ul>
     } @else {
     <p class="text-sm text-text-3">No saved pipelines yet.</p>
+    }
+  </tsai-dialog>
+
+  <!-- Run history -->
+  <tsai-dialog [(open)]="showHistory" size="md" title="Run history">
+    @if (runHistory().length) {
+    <ul class="flex flex-col gap-1">
+      @for (run of runHistory(); track run.runId) {
+      <li
+        class="flex items-center gap-3 rounded-[var(--r-sm)] border border-[var(--border)] px-3 py-2"
+      >
+        <span
+          class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize"
+          [class]="runStatusClass(run.status)"
+        >
+          {{ run.status }}
+        </span>
+        <span class="min-w-0 flex-1">
+          <span class="block truncate font-mono text-xs text-text-2">
+            {{ run.runId }}
+          </span>
+          <span class="text-[11px] text-text-3">
+            {{ savedWhen(run.startedAt) }} · {{ runDuration(run) }}
+          </span>
+        </span>
+      </li>
+      }
+    </ul>
+    } @else {
+    <p class="text-sm text-text-3">No runs recorded for this pipeline yet.</p>
     }
   </tsai-dialog>
 </div>

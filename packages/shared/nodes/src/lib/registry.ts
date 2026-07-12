@@ -70,7 +70,22 @@ export function derivePorts(node: BoardNode): NodePort[] {
 
 /** The kind of input a node parameter takes (drives the inspector form). */
 export type ParamType =
-  'text' | 'number' | 'textarea' | 'boolean' | 'select' | 'expression';
+  | 'text'
+  | 'number'
+  | 'textarea'
+  | 'boolean'
+  | 'select'
+  | 'expression'
+  | 'file'
+  | 'json'
+  | 'array'
+  | 'object'
+  | 'secret'
+  | 'credential'
+  | 'code'
+  | 'url'
+  | 'model'
+  | 'resource-picker';
 
 /** One configurable parameter of a node type. */
 export interface ParamField {
@@ -79,6 +94,16 @@ export interface ParamField {
   type: ParamType;
   placeholder?: string;
   help?: string;
+  required?: boolean;
+  accept?: string;
+  multiple?: boolean;
+  min?: number;
+  max?: number;
+  step?: number;
+  rows?: number;
+  language?: 'json' | 'javascript' | 'typescript' | 'markdown' | 'text';
+  defaultValue?: unknown;
+  visibleWhen?: { key: string; equals: unknown };
   /** Options for `select`. */
   options?: { value: string; label: string }[];
 }
@@ -129,7 +154,16 @@ const PARAM_SCHEMAS: Record<NodeType, ParamField[]> = {
     },
     { key: 'message', label: 'Message', type: 'expression' },
   ],
-  split: [],
+  split: [
+    {
+      key: 'items',
+      label: 'Items',
+      type: 'expression',
+      placeholder: '{{ $json.commands }}',
+      help: 'Array expression to fan out; mock uses its length when available.',
+      required: true,
+    },
+  ],
   merge: [],
   'control-flow': [],
 };
@@ -151,6 +185,33 @@ export interface NodeTypeSpec {
    * as a node's run output. A real backend would supply the true output schema.
    */
   output?: Record<string, unknown>;
+  /** Optional typed output schema; static catalog infers this from `output`. */
+  outputSchema?: OutputSchema;
+}
+
+export type OutputSchema =
+  | { type: 'string' | 'number' | 'boolean' | 'null' }
+  | { type: 'array'; items?: OutputSchema }
+  | { type: 'object'; properties: Record<string, OutputSchema> };
+
+/**
+ * Runtime/catalog contract. The static catalog below implements it for the mock
+ * and playground; a real backend can provide the same surface from REST/WS
+ * metadata without changing the board or runtime consumers.
+ */
+export interface NodeCatalog {
+  /** Catalog version for cache invalidation and compatibility checks. */
+  readonly version: string;
+  /** All node specs visible to the editor/runtime. */
+  specs(): readonly NodeTypeSpec[];
+  /** Look up a concrete catalog type. */
+  entry(type: string | undefined): NodeTypeSpec | undefined;
+  /** Parameter schema for a node, including category fallbacks. */
+  params(node: Pick<BoardNode, 'kind' | 'category' | 'type'>): ParamField[];
+  /** Typed output schema used for autocomplete/validation by future adapters. */
+  outputSchema(type: string | undefined): OutputSchema | undefined;
+  /** Demo/sample output used by the mock runtime and fallback autocomplete. */
+  sampleOutput(type: string | undefined): Record<string, unknown> | undefined;
 }
 
 const METHOD_OPTIONS = [
@@ -213,9 +274,23 @@ export const NODE_CATALOG: NodeTypeSpec[] = [
     label: 'Webhook',
     kind: 'trigger',
     params: [
+      {
+        key: 'method',
+        label: 'Method',
+        type: 'select',
+        options: METHOD_OPTIONS,
+      },
       { key: 'path', label: 'Path', type: 'text', placeholder: '/hook' },
+      { key: 'headers', label: 'Headers', type: 'json' },
+      { key: 'body', label: 'Body', type: 'json' },
     ],
-    output: { source: 'webhook', body: { text: 'payload' } },
+    output: {
+      source: 'webhook',
+      method: 'POST',
+      path: '/hook',
+      headers: { 'content-type': 'application/json' },
+      body: { text: 'payload' },
+    },
   },
   {
     id: 'schedule-trigger',
@@ -223,8 +298,66 @@ export const NODE_CATALOG: NodeTypeSpec[] = [
     kind: 'trigger',
     params: [
       { key: 'cron', label: 'Cron', type: 'text', placeholder: '*/5 * * * *' },
+      {
+        key: 'timezone',
+        label: 'Timezone',
+        type: 'text',
+        placeholder: 'UTC',
+      },
+      {
+        key: 'demoTicks',
+        label: 'Demo ticks',
+        type: 'number',
+        min: 1,
+        max: 10,
+      },
     ],
-    output: { source: 'schedule', firedAt: 0 },
+    output: { source: 'schedule', firedAt: 0, tick: 1 },
+  },
+  {
+    id: 'interval-trigger',
+    label: 'Interval',
+    kind: 'trigger',
+    params: [
+      { key: 'intervalMs', label: 'Interval ms', type: 'number', min: 1 },
+      { key: 'maxTicks', label: 'Max ticks', type: 'number', min: 1, max: 20 },
+      { key: 'startImmediately', label: 'Start immediately', type: 'boolean' },
+      { key: 'jitterMs', label: 'Jitter ms', type: 'number', min: 0 },
+    ],
+    output: { source: 'interval', tick: 1, scheduledAt: 0 },
+  },
+  {
+    id: 'file-trigger',
+    label: 'File',
+    kind: 'trigger',
+    params: [
+      { key: 'file', label: 'Sample file', type: 'file', accept: '*/*' },
+      {
+        key: 'sampleText',
+        label: 'Sample text',
+        type: 'textarea',
+        placeholder: 'hello,file',
+        rows: 5,
+      },
+      { key: 'mime', label: 'MIME type', type: 'text', placeholder: 'text/csv' },
+    ],
+    output: {
+      source: 'file',
+      file: { name: 'sample.csv', mime: 'text/csv', size: 18, text: 'id,name' },
+    },
+  },
+  {
+    id: 'manual-form-trigger',
+    label: 'Manual Form',
+    kind: 'trigger',
+    params: [
+      { key: 'schema', label: 'Form schema', type: 'json' },
+      { key: 'samplePayload', label: 'Sample payload', type: 'json' },
+    ],
+    output: {
+      source: 'manual',
+      form: { customer: 'Ada', priority: 'high' },
+    },
   },
   // Integrations
   {
@@ -239,13 +372,45 @@ export const NODE_CATALOG: NodeTypeSpec[] = [
         type: 'select',
         options: METHOD_OPTIONS,
       },
-      { key: 'url', label: 'URL', type: 'expression' },
-      { key: 'body', label: 'Body', type: 'expression' },
+      { key: 'url', label: 'URL', type: 'url', required: true },
+      { key: 'body', label: 'Body', type: 'json', language: 'json' },
     ],
     output: {
       status: 200,
       headers: { 'content-type': 'application/json' },
       body: { ok: true, id: 'res_123' },
+    },
+  },
+  {
+    id: 'public-api-request',
+    label: 'Public API',
+    kind: 'action',
+    category: 'integration',
+    params: [
+      {
+        key: 'preset',
+        label: 'Preset',
+        type: 'select',
+        options: [
+          { value: 'jsonplaceholder', label: 'JSONPlaceholder' },
+          { value: 'hacker-news', label: 'Hacker News' },
+          { value: 'github-zen', label: 'GitHub Zen' },
+          { value: 'custom', label: 'Custom URL' },
+        ],
+      },
+      {
+        key: 'url',
+        label: 'URL',
+        type: 'url',
+        placeholder: 'https://jsonplaceholder.typicode.com/todos/1',
+        visibleWhen: { key: 'preset', equals: 'custom' },
+      },
+      { key: 'timeoutMs', label: 'Timeout ms', type: 'number', min: 100 },
+    ],
+    output: {
+      status: 200,
+      url: 'https://jsonplaceholder.typicode.com/todos/1',
+      body: { id: 1, title: 'delectus aut autem', completed: false },
     },
   },
   {
@@ -257,7 +422,7 @@ export const NODE_CATALOG: NodeTypeSpec[] = [
       {
         key: 'model',
         label: 'Model',
-        type: 'select',
+        type: 'model',
         options: [
           { value: 'gpt', label: 'GPT' },
           { value: 'claude', label: 'Claude' },
@@ -278,12 +443,81 @@ export const NODE_CATALOG: NodeTypeSpec[] = [
     kind: 'action',
     category: 'integration',
     params: [
-      { key: 'model', label: 'Model', type: 'text' },
+      { key: 'model', label: 'Model', type: 'model' },
       { key: 'prompt', label: 'Prompt', type: 'expression' },
     ],
     output: {
       imageUrl: 'https://example.test/cat.png',
       prompt: 'A playful orange cat in watercolor',
+    },
+  },
+  {
+    id: 'text-classification',
+    label: 'Text Classification',
+    kind: 'action',
+    category: 'integration',
+    params: [
+      { key: 'model', label: 'Model', type: 'model' },
+      {
+        key: 'text',
+        label: 'Text',
+        type: 'expression',
+        placeholder: '{{ $json.message }}',
+      },
+      {
+        key: 'labels',
+        label: 'Labels',
+        type: 'array',
+        placeholder: '["sales","support","other"]',
+      },
+    ],
+    output: { label: 'support', confidence: 0.92 },
+  },
+  {
+    id: 'sentiment-classifier',
+    label: 'Sentiment / Priority',
+    kind: 'action',
+    category: 'integration',
+    params: [
+      { key: 'model', label: 'Model', type: 'model' },
+      { key: 'text', label: 'Text', type: 'expression' },
+    ],
+    output: {
+      sentiment: 'positive',
+      priority: 'normal',
+      toxicity: 0.01,
+      confidence: 0.88,
+    },
+  },
+  {
+    id: 'ocr-image-recognition',
+    label: 'OCR / Image Recognition',
+    kind: 'action',
+    category: 'integration',
+    params: [
+      { key: 'model', label: 'Model', type: 'model' },
+      { key: 'image', label: 'Image file', type: 'file', accept: 'image/*' },
+      { key: 'imageUrl', label: 'Image URL', type: 'url' },
+    ],
+    output: {
+      text: 'Invoice #1001',
+      classes: [{ label: 'document', confidence: 0.94 }],
+    },
+  },
+  {
+    id: 'embedding-similarity',
+    label: 'Embedding Similarity',
+    kind: 'action',
+    category: 'integration',
+    params: [
+      { key: 'model', label: 'Model', type: 'model' },
+      { key: 'text', label: 'Text', type: 'expression' },
+      { key: 'query', label: 'Query', type: 'expression' },
+    ],
+    output: {
+      score: 0.82,
+      embedding: [0.12, -0.08, 0.31],
+      similar: true,
     },
   },
   // Transforms
@@ -320,13 +554,150 @@ export const NODE_CATALOG: NodeTypeSpec[] = [
     ],
     output: { value: 'computed', items: [{ id: 1, value: 'row' }] },
   },
+  {
+    id: 'delay',
+    label: 'Delay',
+    kind: 'action',
+    category: 'transform',
+    params: [
+      {
+        key: 'duration',
+        label: 'Duration ms',
+        type: 'number',
+        placeholder: '1000',
+      },
+    ],
+    output: { delayed: true },
+  },
+  {
+    id: 'throttle',
+    label: 'Throttle',
+    kind: 'action',
+    category: 'transform',
+    params: [
+      { key: 'windowMs', label: 'Window ms', type: 'number', min: 1 },
+      { key: 'key', label: 'Key', type: 'expression', placeholder: '{{ $trigger.id }}' },
+    ],
+    output: { throttled: false, windowMs: 1000 },
+  },
+  {
+    id: 'debounce',
+    label: 'Debounce',
+    kind: 'action',
+    category: 'transform',
+    params: [
+      { key: 'windowMs', label: 'Window ms', type: 'number', min: 1 },
+      { key: 'key', label: 'Key', type: 'expression', placeholder: '{{ $trigger.id }}' },
+    ],
+    output: { debounced: true, windowMs: 1000 },
+  },
+  {
+    id: 'repeat',
+    label: 'Repeat',
+    kind: 'action',
+    category: 'transform',
+    params: [
+      { key: 'count', label: 'Count', type: 'number', min: 1, max: 100 },
+      {
+        key: 'item',
+        label: 'Item template',
+        type: 'expression',
+        placeholder: '{{ $json }}',
+      },
+    ],
+    output: { items: [{ index: 0, value: 'demo' }], count: 1 },
+  },
+  {
+    id: 'json-query',
+    label: 'JSON Query',
+    kind: 'action',
+    category: 'transform',
+    params: [
+      {
+        key: 'mode',
+        label: 'Mode',
+        type: 'select',
+        options: [
+          { value: 'pick', label: 'Pick into field' },
+          { value: 'replace', label: 'Replace payload' },
+          { value: 'filter-items', label: 'Filter items' },
+        ],
+      },
+      {
+        key: 'expression',
+        label: 'Expression',
+        type: 'expression',
+        placeholder: '{{ $json.message }}',
+      },
+      {
+        key: 'field',
+        label: 'Field',
+        type: 'text',
+        placeholder: 'result',
+      },
+    ],
+    output: { result: 'selected value' },
+  },
+  {
+    id: 'csv-parse',
+    label: 'CSV Parse',
+    kind: 'action',
+    category: 'transform',
+    params: [
+      {
+        key: 'csv',
+        label: 'CSV',
+        type: 'textarea',
+        placeholder: '{{ $json.file.text }}',
+        rows: 5,
+      },
+      {
+        key: 'delimiter',
+        label: 'Delimiter',
+        type: 'text',
+        placeholder: ',',
+      },
+      {
+        key: 'headers',
+        label: 'First row is header',
+        type: 'boolean',
+      },
+    ],
+    output: { items: [{ name: 'Ada', score: '42' }] },
+  },
+  {
+    id: 'markdown-render',
+    label: 'Markdown Render',
+    kind: 'action',
+    category: 'transform',
+    params: [
+      {
+        key: 'markdown',
+        label: 'Markdown',
+        type: 'expression',
+        placeholder: '## Result\n{{ $json.message }}',
+      },
+    ],
+    output: {
+      markdown: '## Result',
+      html: '<h2>Result</h2>',
+      text: 'Result',
+    },
+  },
   // Split / merge
   {
     id: 'split',
     label: 'Split',
     kind: 'action',
     category: 'split',
-    params: [],
+    params: [
+      {
+        key: 'items',
+        label: 'Items',
+        type: 'expression',
+        placeholder: '{{ $json.commands }}',
+      },
+    ],
     output: { items: [{ index: 0, value: 'item' }] },
   },
   {
@@ -349,11 +720,21 @@ export const NODE_CATALOG: NodeTypeSpec[] = [
     output: { acknowledged: true, messageId: 1001 },
   },
   {
+    id: 'whatsapp-send',
+    label: 'WhatsApp Send',
+    kind: 'effect',
+    params: [
+      { key: 'number', label: 'Number', type: 'expression' },
+      { key: 'text', label: 'Text', type: 'expression' },
+    ],
+    output: { acknowledged: true, messageId: 'wamid.1001' },
+  },
+  {
     id: 'http-effect',
     label: 'HTTP Call',
     kind: 'effect',
     params: [
-      { key: 'url', label: 'URL', type: 'expression' },
+      { key: 'url', label: 'URL', type: 'url', required: true },
       {
         key: 'method',
         label: 'Method',
@@ -382,15 +763,140 @@ export const NODE_CATALOG: NodeTypeSpec[] = [
     ],
     output: { acknowledged: true, level: 'info' },
   },
+  {
+    id: 'toast-effect',
+    label: 'Toast',
+    kind: 'effect',
+    params: [
+      { key: 'title', label: 'Title', type: 'expression' },
+      { key: 'message', label: 'Message', type: 'expression' },
+      {
+        key: 'variant',
+        label: 'Variant',
+        type: 'select',
+        options: [
+          { value: 'info', label: 'info' },
+          { value: 'success', label: 'success' },
+          { value: 'warning', label: 'warning' },
+          { value: 'danger', label: 'danger' },
+        ],
+      },
+      { key: 'duration', label: 'Duration ms', type: 'number' },
+    ],
+    output: {
+      acknowledged: true,
+      title: 'Pipeline',
+      message: 'Done',
+      variant: 'success',
+    },
+  },
+  {
+    id: 'dialog-result',
+    label: 'Result Dialog',
+    kind: 'effect',
+    params: [
+      { key: 'title', label: 'Title', type: 'expression' },
+      { key: 'body', label: 'Body', type: 'expression' },
+      { key: 'imageUrl', label: 'Image URL', type: 'url' },
+      { key: 'json', label: 'JSON', type: 'json', language: 'json' },
+    ],
+    output: {
+      acknowledged: true,
+      title: 'Result',
+      body: 'Rendered from pipeline context',
+    },
+  },
+  {
+    id: 'image-preview',
+    label: 'Image Preview',
+    kind: 'effect',
+    params: [
+      { key: 'title', label: 'Title', type: 'expression' },
+      { key: 'imageUrl', label: 'Image URL', type: 'url' },
+      { key: 'caption', label: 'Caption', type: 'expression' },
+    ],
+    output: {
+      acknowledged: true,
+      title: 'Image preview',
+      imageUrl: 'https://example.test/image.png',
+      caption: 'Rendered from pipeline context',
+    },
+  },
+  {
+    id: 'download-file',
+    label: 'Download File',
+    kind: 'effect',
+    params: [
+      { key: 'fileName', label: 'File name', type: 'expression' },
+      { key: 'content', label: 'Content', type: 'expression' },
+      { key: 'mimeType', label: 'MIME type', type: 'resource-picker' },
+    ],
+    output: {
+      acknowledged: true,
+      fileName: 'pipeline-output.txt',
+      mimeType: 'text/plain',
+    },
+  },
+  {
+    id: 'clipboard-effect',
+    label: 'Copy to Clipboard',
+    kind: 'effect',
+    params: [{ key: 'text', label: 'Text', type: 'expression' }],
+    output: {
+      acknowledged: true,
+      text: 'Copied from pipeline context',
+    },
+  },
 ];
 
-const CATALOG_BY_ID = new Map(NODE_CATALOG.map((spec) => [spec.id, spec]));
+export function createStaticNodeCatalog(
+  specs: readonly NodeTypeSpec[] = NODE_CATALOG,
+  version = 'mock-static-v1',
+): NodeCatalog {
+  const byId = new Map(specs.map((spec) => [spec.id, spec]));
+  return {
+    version,
+    specs: () => specs,
+    entry: (type) => (type ? byId.get(type) : undefined),
+    params: (node) => byId.get(node.type ?? '')?.params ?? PARAM_SCHEMAS[nodeType(node)],
+    outputSchema: (type) => {
+      const spec = type ? byId.get(type) : undefined;
+      return spec?.outputSchema ?? inferOutputSchema(spec?.output);
+    },
+    sampleOutput: (type) => (type ? byId.get(type)?.output : undefined),
+  };
+}
+
+export function inferOutputSchema(value: unknown): OutputSchema | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return { type: 'null' };
+  if (Array.isArray(value)) {
+    return { type: 'array', items: inferOutputSchema(value[0]) };
+  }
+  if (typeof value === 'object') {
+    return {
+      type: 'object',
+      properties: Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).flatMap(([key, child]) => {
+          const schema = inferOutputSchema(child);
+          return schema ? [[key, schema]] : [];
+        }),
+      ),
+    };
+  }
+  if (typeof value === 'string') return { type: 'string' };
+  if (typeof value === 'number') return { type: 'number' };
+  if (typeof value === 'boolean') return { type: 'boolean' };
+  return undefined;
+}
+
+export const STATIC_NODE_CATALOG = createStaticNodeCatalog();
 
 /** Look up a concrete catalog type. */
 export function catalogEntry(
   type: string | undefined,
 ): NodeTypeSpec | undefined {
-  return type ? CATALOG_BY_ID.get(type) : undefined;
+  return STATIC_NODE_CATALOG.entry(type);
 }
 
 /**
@@ -400,7 +906,7 @@ export function catalogEntry(
 export function paramSchema(
   node: Pick<BoardNode, 'kind' | 'category' | 'type'>,
 ): ParamField[] {
-  return catalogEntry(node.type)?.params ?? PARAM_SCHEMAS[nodeType(node)];
+  return STATIC_NODE_CATALOG.params(node);
 }
 
 /** Default configuration when a control-flow subtype is first chosen. */

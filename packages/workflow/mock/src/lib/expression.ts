@@ -7,14 +7,18 @@
  * Grammar (precedence low → high):
  *   || · && · (== != === !==) · (< <= > >=) · (+ -) · (* / %) · unary(! -) ·
  *   postfix(.member ["key"] [index]) · primary
- * Primaries: number, string, true/false/null, `$json`, `$node["Title"]`, `( … )`.
+ * Primaries: number, string, true/false/null, `$json`, `$trigger`,
+ * `$node["Title"]`, `( … )`.
  *
- * `$json` is the current node's (merged) input; `$node["Title"]` is another
- * node's output. Both come from the {@link EvalContext}.
+ * `$json` is the current node's (merged) input, `$trigger` is the active trigger
+ * metadata, and `$node["Title"]` is another node's output. All come from the
+ * {@link EvalContext}.
  */
 export interface EvalContext {
   /** The current node's input (merged upstream output). */
   json?: unknown;
+  /** Metadata for the trigger event currently driving this pass. */
+  trigger?: unknown;
   /** Resolve `$node["Title"]` to that node's output. */
   node?: (title: string) => unknown;
 }
@@ -180,6 +184,7 @@ function readString(src: string, start: number): { value: string; next: number }
 type Expr =
   | { k: 'lit'; v: unknown }
   | { k: 'json' }
+  | { k: 'trigger' }
   | { k: 'node'; title: string }
   | { k: 'member'; o: Expr; p: string }
   | { k: 'index'; o: Expr; i: Expr }
@@ -255,6 +260,7 @@ class Parser {
       if (tok.value === 'false') return { k: 'lit', v: false };
       if (tok.value === 'null') return { k: 'lit', v: null };
       if (tok.value === '$json') return { k: 'json' };
+      if (tok.value === '$trigger') return { k: 'trigger' };
       if (tok.value === '$node') {
         this.expectOp('[');
         const key = this.next();
@@ -300,6 +306,8 @@ function evaluate(node: Expr, ctx: EvalContext): unknown {
       return node.v;
     case 'json':
       return ctx.json;
+    case 'trigger':
+      return ctx.trigger;
     case 'node':
       return ctx.node?.(node.title);
     case 'member':

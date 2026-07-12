@@ -151,6 +151,12 @@ describe('TestBackendSystem — happy path', () => {
         'Trigger 2/2: "slack".',
       ]),
     );
+    expect(snap.passes?.map((pass) => pass.trigger?.id)).toEqual([
+      'telegram',
+      'slack',
+    ]);
+    expect(snap.passes?.[0]?.outputs['telegram']).toBeDefined();
+    expect(snap.passes?.[1]?.outputs['slack']).toBeDefined();
   });
 
   it('can force a single trigger, preserving the previous one-event behavior', async () => {
@@ -177,6 +183,66 @@ describe('TestBackendSystem — happy path', () => {
     expect(snap.nodes['tg'].output).toMatchObject({
       source: 'telegram',
       message: expect.any(String),
+    });
+  });
+
+  it('replays interval triggers for maxTicks in the mock queue', async () => {
+    const interval: BoardNode = {
+      ...trigger('interval'),
+      type: 'interval-trigger',
+      data: { maxTicks: 3, intervalMs: 250 },
+    };
+    const snap = await runToEnd(fast(), pipeline([interval], []));
+    expect(snap.nodes['interval'].output).toMatchObject({
+      source: 'interval',
+      tick: 3,
+      intervalMs: 250,
+    });
+    expect(snap.log.map((entry) => entry.message)).toEqual(
+      expect.arrayContaining([
+        'Trigger 1/3: "interval".',
+        'Trigger 2/3: "interval".',
+        'Trigger 3/3: "interval".',
+      ]),
+    );
+  });
+
+  it('emits file, manual form and webhook trigger payloads from node data', async () => {
+    const file: BoardNode = {
+      ...trigger('file'),
+      type: 'file-trigger',
+      data: { sampleText: 'a,b\n1,2', mime: 'text/csv' },
+    };
+    const manual: BoardNode = {
+      ...trigger('manual'),
+      type: 'manual-form-trigger',
+      data: { samplePayload: '{"priority":"high"}' },
+    };
+    const webhook: BoardNode = {
+      ...trigger('webhook'),
+      type: 'webhook-trigger',
+      data: {
+        method: 'PUT',
+        path: '/tickets',
+        headers: '{"x-demo":"1"}',
+        body: '{"text":"hello"}',
+      },
+    };
+    const snap = await runToEnd(fast(), pipeline([file, manual, webhook], []));
+    expect(snap.nodes['file'].output).toMatchObject({
+      source: 'file',
+      file: { mime: 'text/csv', text: 'a,b\n1,2' },
+    });
+    expect(snap.nodes['manual'].output).toMatchObject({
+      source: 'manual',
+      form: { priority: 'high' },
+    });
+    expect(snap.nodes['webhook'].output).toMatchObject({
+      source: 'webhook',
+      method: 'PUT',
+      path: '/tickets',
+      headers: { 'x-demo': '1' },
+      body: { text: 'hello' },
     });
   });
 
@@ -234,6 +300,288 @@ describe('TestBackendSystem — failures', () => {
     const snap = await runToEnd(sys, p);
     expect(snap.status).toBe('success');
     expect(snap.nodes['log'].status).toBe('error');
+  });
+
+  it('supports node-configured mock failures', async () => {
+    const bad: BoardNode = {
+      ...action('bad'),
+      data: { __mockFailure: 'Configured failure' },
+    };
+    const snap = await runToEnd(
+      fast(),
+      pipeline([trigger('t'), bad], [edge('t', 'bad')]),
+    );
+
+    expect(snap.status).toBe('error');
+    expect(snap.nodes['bad'].error).toBe('Configured failure');
+  });
+
+  it('retries a configured failing node before failing the run', async () => {
+    const bad: BoardNode = {
+      ...action('bad'),
+      data: {
+        __mockFailure: 'Configured failure',
+        __retryAttempts: 3,
+        __retryBackoffMs: 0,
+      },
+    };
+    const snap = await runToEnd(
+      fast(),
+      pipeline([trigger('t'), bad], [edge('t', 'bad')]),
+    );
+
+    expect(snap.status).toBe('error');
+    expect(snap.log.filter((entry) => /retry/.test(entry.message))).toHaveLength(2);
+    expect(snap.nodes['bad'].error).toBe('Configured failure');
+  });
+
+  it('can continue after a configured node failure', async () => {
+    const bad: BoardNode = {
+      ...action('bad'),
+      data: { __mockFailure: 'soft fail', __continueOnError: true },
+    };
+    const done = effect('done');
+    const snap = await runToEnd(
+      fast(),
+      pipeline([trigger('t'), bad, done], [edge('t', 'bad'), edge('bad', 'done')]),
+    );
+
+    expect(snap.status).toBe('success');
+    expect(snap.nodes['bad'].status).toBe('error');
+    expect(snap.nodes['done'].status).toBe('success');
+  });
+
+  it('uses a delay node as a timed pass-through transform', async () => {
+    const wait: BoardNode = {
+      ...action('wait'),
+      type: 'delay',
+      data: { duration: 0 },
+    };
+    const snap = await runToEnd(
+      fast(),
+      pipeline([trigger('t'), wait, effect('done')], [
+        edge('t', 'wait'),
+        edge('wait', 'done'),
+      ]),
+    );
+
+    expect(snap.status).toBe('success');
+    expect(snap.nodes['wait'].output).toMatchObject({
+      count: 10,
+      source: 'telegram',
+    });
+  });
+
+  it('picks a JSON expression into a configured field', async () => {
+    const pick: BoardNode = {
+      ...action('pick'),
+      type: 'json-query',
+      data: {
+        mode: 'pick',
+        expression: '{{ $json.source }}',
+        field: 'channel',
+      },
+    };
+    const snap = await runToEnd(
+      fast(),
+      pipeline([trigger('t'), pick], [edge('t', 'pick')]),
+    );
+
+    expect(snap.nodes['pick'].output).toMatchObject({
+      source: 'telegram',
+      channel: 'telegram',
+    });
+  });
+
+  it('replaces payload with a JSON expression result', async () => {
+    const replace: BoardNode = {
+      ...action('replace'),
+      type: 'json-query',
+      data: {
+        mode: 'replace',
+        expression: '{{ $json.source }}',
+      },
+    };
+    const snap = await runToEnd(
+      fast(),
+      pipeline([trigger('t'), replace], [edge('t', 'replace')]),
+    );
+
+    expect(snap.nodes['replace'].output).toBe('telegram');
+  });
+
+  it('filters item arrays with a per-item expression', async () => {
+    const split: BoardNode = { ...action('split', 'split'), type: 'split' };
+    const filter: BoardNode = {
+      ...action('filter'),
+      type: 'json-query',
+      data: {
+        mode: 'filter-items',
+        expression: '$json > 4',
+      },
+    };
+    const snap = await runToEnd(
+      fast(),
+      pipeline([trigger('t'), split, filter], [
+        edge('t', 'split'),
+        edge('split', 'filter'),
+      ]),
+    );
+
+    expect(snap.nodes['filter'].output).toMatchObject({
+      items: [5, 6, 7, 8, 9],
+    });
+  });
+
+  it('parses CSV into item objects with headers', async () => {
+    const parse: BoardNode = {
+      ...action('parse'),
+      type: 'csv-parse',
+      data: {
+        csv: 'name,score\nAda,42\nLinus,7',
+        delimiter: ',',
+        headers: true,
+      },
+    };
+    const snap = await runToEnd(
+      fast(),
+      pipeline([trigger('t'), parse], [edge('t', 'parse')]),
+    );
+
+    expect(snap.nodes['parse'].output).toMatchObject({
+      items: [
+        { name: 'Ada', score: '42' },
+        { name: 'Linus', score: '7' },
+      ],
+    });
+  });
+
+  it('parses quoted CSV values', async () => {
+    const parse: BoardNode = {
+      ...action('parse'),
+      type: 'csv-parse',
+      data: {
+        csv: 'name,note\n"Ada","hello, world"',
+        delimiter: ',',
+        headers: true,
+      },
+    };
+    const snap = await runToEnd(
+      fast(),
+      pipeline([trigger('t'), parse], [edge('t', 'parse')]),
+    );
+
+    expect(snap.nodes['parse'].output).toMatchObject({
+      items: [{ name: 'Ada', note: 'hello, world' }],
+    });
+  });
+
+  it('renders markdown templates into html and text', async () => {
+    const render: BoardNode = {
+      ...action('render'),
+      type: 'markdown-render',
+      data: {
+        markdown: '## {{ $json.source }}\n\n- **Ready**\n- `done`',
+      },
+    };
+    const snap = await runToEnd(
+      fast(),
+      pipeline([trigger('t'), render], [edge('t', 'render')]),
+    );
+
+    expect(snap.nodes['render'].output).toMatchObject({
+      markdown: '## telegram\n\n- **Ready**\n- `done`',
+      html: '<h2>telegram</h2><ul><li><strong>Ready</strong></li><li><code>done</code></li></ul>',
+      text: 'telegram\n\nReady\ndone',
+    });
+  });
+
+  it('uses the mocked public API fetcher for public API request nodes', async () => {
+    const api: BoardNode = {
+      ...action('api', 'integration'),
+      type: 'public-api-request',
+      data: { preset: 'hacker-news', timeoutMs: 1200 },
+    };
+    const snap = await runToEnd(
+      fast(),
+      pipeline([trigger('t'), api], [edge('t', 'api')]),
+    );
+    expect(snap.nodes['api'].output).toMatchObject({
+      status: 200,
+      url: 'https://hacker-news.firebaseio.com/v0/item/8863.json',
+      body: { title: 'My YC app: Dropbox' },
+      timeoutMs: 1200,
+    });
+  });
+
+  it('loads browser-local AI demo models through the mock model loader', async () => {
+    const classify: BoardNode = {
+      ...action('classify', 'integration'),
+      type: 'text-classification',
+      data: { model: 'tiny-classifier', labels: '["billing","support"]' },
+    };
+    const snap = await runToEnd(
+      new TestBackendSystem({
+        stepDelayMs: 0,
+        modelLoader: (id) => ({ id, loaded: true, backend: 'mock-wasm' }),
+      }),
+      pipeline([trigger('t'), classify], [edge('t', 'classify')]),
+    );
+    expect(snap.nodes['classify'].output).toMatchObject({
+      model: { id: 'tiny-classifier', loaded: true, backend: 'mock-wasm' },
+      label: 'support',
+      confidence: 0.92,
+    });
+  });
+
+  it('models throttle and debounce as configured pass-through transforms', async () => {
+    const throttle: BoardNode = {
+      ...action('throttle'),
+      type: 'throttle',
+      data: { windowMs: 250, key: '{{ $trigger.channel }}' },
+    };
+    const debounce: BoardNode = {
+      ...action('debounce'),
+      type: 'debounce',
+      data: { windowMs: 500, key: '{{ $json.source }}' },
+    };
+    const snap = await runToEnd(
+      fast(),
+      pipeline(
+        [trigger('t'), throttle, debounce],
+        [edge('t', 'throttle'), edge('throttle', 'debounce')],
+      ),
+    );
+    expect(snap.nodes['throttle'].output).toMatchObject({
+      throttled: true,
+      windowMs: 250,
+      key: 't',
+    });
+    expect(snap.nodes['debounce'].output).toMatchObject({
+      debounced: true,
+      windowMs: 500,
+      key: 'telegram',
+    });
+  });
+
+  it('generates bounded repeat items without graph cycles', async () => {
+    const repeat: BoardNode = {
+      ...action('repeat'),
+      type: 'repeat',
+      data: { count: 3, item: '{{ $json.source }}' },
+    };
+    const snap = await runToEnd(
+      fast(),
+      pipeline([trigger('t'), repeat], [edge('t', 'repeat')]),
+    );
+    expect(snap.nodes['repeat'].output).toMatchObject({
+      count: 3,
+      items: [
+        { index: 0, value: 'telegram' },
+        { index: 1, value: 'telegram' },
+        { index: 2, value: 'telegram' },
+      ],
+    });
   });
 });
 
@@ -386,6 +734,43 @@ describe('TestBackendSystem — smart evaluation', () => {
     expect(snap.nodes['fallback'].status).toBe('skipped'); // default not taken
   });
 
+  it('routes by $trigger.channel independently from payload shape', async () => {
+    const tg: BoardNode = { ...trigger('telegram'), type: 'telegram-trigger' };
+    const wa: BoardNode = { ...trigger('whatsapp'), type: 'whatsapp-trigger' };
+    const sw: BoardNode = {
+      ...switchOnSource('sw', [
+        { id: 'tg', value: 'telegram' },
+        { id: 'wa', value: 'whatsapp' },
+      ]),
+      config: {
+        type: 'switch',
+        discriminant: '$trigger.channel',
+        cases: [
+          { id: 'tg', label: 'telegram', value: 'telegram' },
+          { id: 'wa', label: 'whatsapp', value: 'whatsapp' },
+        ],
+        hasDefault: false,
+      },
+    };
+    const p = pipeline(
+      [tg, wa, sw, effect('replyTg'), effect('replyWa')],
+      [
+        edge('telegram', 'sw'),
+        edge('whatsapp', 'sw'),
+        edge('sw', 'replyTg', 'case-tg'),
+        edge('sw', 'replyWa', 'case-wa'),
+      ],
+    );
+    const snap = await runToEnd(
+      new TestBackendSystem({ stepDelayMs: 0, firingTrigger: 'whatsapp' }),
+      p,
+    );
+
+    expect(snap.status).toBe('success');
+    expect(snap.nodes['replyTg'].status).toBe('skipped');
+    expect(snap.nodes['replyWa'].status).toBe('success');
+  });
+
   it('fails a node when an expression reads into a missing path (shape changed)', async () => {
     const wa: BoardNode = { ...trigger('wa'), type: 'whatsapp-trigger' };
     const bad: BoardNode = {
@@ -418,6 +803,149 @@ describe('TestBackendSystem — smart evaluation', () => {
     expect(snap.nodes['send'].output).toMatchObject({
       text: 'Echo: Hello from Telegram',
     });
+  });
+
+  it('emits toast side effects from toast effect nodes', async () => {
+    const tg: BoardNode = { ...trigger('tg'), type: 'telegram-trigger' };
+    const toast: BoardNode = {
+      ...effect('toast'),
+      type: 'toast-effect',
+      data: {
+        title: 'Done',
+        message: 'Echo: {{ $json.message }}',
+        variant: 'success',
+        duration: 123,
+      },
+    };
+    const sys = fast();
+    const events: unknown[] = [];
+    sys.observeSideEffects((event) => events.push(event));
+
+    await runToEnd(sys, pipeline([tg, toast], [edge('tg', 'toast')]));
+
+    expect(events).toEqual([
+      {
+        kind: 'toast',
+        runId: 'run-1',
+        nodeId: 'toast',
+        title: 'Done',
+        message: 'Echo: Hello from Telegram',
+        variant: 'success',
+        duration: 123,
+      },
+    ]);
+  });
+
+  it('emits dialog side effects from dialog result nodes', async () => {
+    const tg: BoardNode = { ...trigger('tg'), type: 'telegram-trigger' };
+    const dialog: BoardNode = {
+      ...effect('dialog'),
+      type: 'dialog-result',
+      data: {
+        title: 'Payload',
+        body: '{{ $json.message }}',
+        json: '{{ $json }}',
+      },
+    };
+    const sys = fast();
+    const events: unknown[] = [];
+    sys.observeSideEffects((event) => events.push(event));
+
+    await runToEnd(sys, pipeline([tg, dialog], [edge('tg', 'dialog')]));
+
+    expect(events).toEqual([
+      {
+        kind: 'dialog',
+        runId: 'run-1',
+        nodeId: 'dialog',
+        title: 'Payload',
+        body: 'Hello from Telegram',
+        imageUrl: undefined,
+        json: {
+          source: 'telegram',
+          message: 'Hello from Telegram',
+          chatId: 4242,
+        },
+      },
+    ]);
+  });
+
+  it('emits image preview effects as dialog side effects', async () => {
+    const img: BoardNode = {
+      ...effect('preview'),
+      type: 'image-preview',
+      data: {
+        title: 'Preview',
+        imageUrl: 'https://example.test/cat.png',
+        caption: 'Generated image',
+      },
+    };
+    const sys = fast();
+    const events: unknown[] = [];
+    sys.observeSideEffects((event) => events.push(event));
+
+    await runToEnd(sys, pipeline([trigger('t'), img], [edge('t', 'preview')]));
+
+    expect(events).toEqual([
+      {
+        kind: 'dialog',
+        runId: 'run-1',
+        nodeId: 'preview',
+        title: 'Preview',
+        body: 'Generated image',
+        imageUrl: 'https://example.test/cat.png',
+      },
+    ]);
+  });
+
+  it('emits download side effects from download file nodes', async () => {
+    const dl: BoardNode = {
+      ...effect('download'),
+      type: 'download-file',
+      data: {
+        fileName: 'result.json',
+        content: '{{ $json }}',
+        mimeType: 'application/json',
+      },
+    };
+    const sys = fast();
+    const events: unknown[] = [];
+    sys.observeSideEffects((event) => events.push(event));
+
+    await runToEnd(sys, pipeline([trigger('t'), dl], [edge('t', 'download')]));
+
+    expect(events).toEqual([
+      {
+        kind: 'download',
+        runId: 'run-1',
+        nodeId: 'download',
+        fileName: 'result.json',
+        content: '{"count":10,"source":"telegram"}',
+        mimeType: 'application/json',
+      },
+    ]);
+  });
+
+  it('emits clipboard side effects from clipboard nodes', async () => {
+    const clip: BoardNode = {
+      ...effect('clipboard'),
+      type: 'clipboard-effect',
+      data: { text: 'Copy {{ $json.source }}' },
+    };
+    const sys = fast();
+    const events: unknown[] = [];
+    sys.observeSideEffects((event) => events.push(event));
+
+    await runToEnd(sys, pipeline([trigger('t'), clip], [edge('t', 'clipboard')]));
+
+    expect(events).toEqual([
+      {
+        kind: 'clipboard',
+        runId: 'run-1',
+        nodeId: 'clipboard',
+        text: 'Copy telegram',
+      },
+    ]);
   });
 });
 
