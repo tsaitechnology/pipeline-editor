@@ -54,7 +54,7 @@ import {
   paramSchema,
   variablePaths,
 } from '@tsai-pe/nodes';
-import { Button, Dialog } from '@tsai-pe/ui-kit';
+import { Button, Dialog, Input } from '@tsai-pe/ui-kit';
 import { LucideAngularModule } from 'lucide-angular';
 import { PIPELINE_BACKEND } from '../pipeline-backend.token';
 import { PIPELINE_STORE } from '../pipeline-store.token';
@@ -68,6 +68,7 @@ const MINIMAP = { width: 190, height: 120, pad: 8 };
 /** One entry in the node palette — a concrete catalog type (or control-flow). */
 interface PaletteItem {
   label: string;
+  description: string;
   kind: NodeKind;
   category?: ActionCategory;
   /** Concrete catalog type id, when adding a typed node. */
@@ -85,12 +86,23 @@ function fromCatalog(spec: (typeof NODE_CATALOG)[number]): PaletteItem {
   const meta = NODE_META[nodeType(spec)];
   return {
     label: spec.label,
+    description: paletteDescription(spec),
     kind: spec.kind,
     category: spec.category,
     type: spec.id,
     icon: meta.icon,
     color: meta.color,
   };
+}
+
+function paletteDescription(spec: (typeof NODE_CATALOG)[number]): string {
+  if (spec.params.length) {
+    return spec.params.map((param) => param.label).join(' · ');
+  }
+  if (spec.output) {
+    return `Outputs ${Object.keys(spec.output).slice(0, 3).join(', ')}`;
+  }
+  return spec.category ? `${spec.category} node` : `${spec.kind} node`;
 }
 
 const byType = (t: NodeType) =>
@@ -108,6 +120,7 @@ const PALETTE_GROUPS: PaletteGroup[] = [
       ...byType('merge'),
       {
         label: 'Control flow',
+        description: 'Branch, switch, or filter by expression',
         kind: 'action',
         category: 'control-flow',
         icon: NODE_META['control-flow'].icon,
@@ -164,7 +177,7 @@ interface ContextMenu {
  */
 @Component({
   selector: 'pe-board',
-  imports: [BoardGrid, NodeView, LucideAngularModule, Dialog, Button],
+  imports: [BoardGrid, NodeView, LucideAngularModule, Dialog, Button, Input],
   templateUrl: './board.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
@@ -193,6 +206,32 @@ export class Board {
 
   protected readonly store = new BoardStore();
   protected readonly paletteGroups = PALETTE_GROUPS;
+  protected readonly paletteSearch = signal('');
+  protected readonly paletteCollapsed = signal(false);
+  private readonly paletteGroupState = signal<Record<string, boolean>>({});
+
+  protected readonly filteredPaletteGroups = computed(() => {
+    const query = this.paletteSearch().trim().toLowerCase();
+    if (!query) return this.paletteGroups;
+
+    return this.paletteGroups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) =>
+          [
+            item.label,
+            item.description,
+            item.category ?? '',
+            item.kind,
+            item.type ?? '',
+          ]
+            .join(' ')
+            .toLowerCase()
+            .includes(query),
+        ),
+      }))
+      .filter((group) => group.items.length);
+  });
 
   /** Shared Tailwind class strings for the repeated floating-panel widgets. */
   protected readonly cls = {
@@ -211,6 +250,24 @@ export class Board {
       'w-full px-[9px] py-[7px] text-[0.8125rem] text-text border border-[var(--border)] rounded-[var(--r-sm)] bg-[var(--surface-1)] outline-none transition-[border-color] duration-150 focus:border-[var(--accent)]',
     hint: 'text-[10.5px] leading-snug text-text-3',
   };
+
+  protected readonly paletteClasses = computed(
+    () =>
+      `absolute inset-y-0 left-0 z-[21] flex flex-col border-r border-border bg-surface-2 shadow-elev-2 transition-[width] duration-200 ${
+        this.paletteCollapsed() ? 'w-12' : 'w-[280px]'
+      }`,
+  );
+
+  protected readonly surfaceClasses = computed(
+    () =>
+      `absolute inset-y-0 right-0 overflow-hidden transition-[left] duration-200 ${
+        this.readonly()
+          ? 'left-0'
+          : this.paletteCollapsed()
+            ? 'left-12'
+            : 'left-[280px]'
+      }`,
+  );
 
   /**
    * Expression-syntax cheatsheets shown under expression fields. Params are
@@ -248,6 +305,7 @@ export class Board {
   }
 
   private readonly hostEl = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly surfaceEl = viewChild<ElementRef<HTMLElement>>('surface');
   private readonly backend = inject(PIPELINE_BACKEND, { optional: true });
   private readonly persistence = inject(PIPELINE_STORE, { optional: true });
 
@@ -274,8 +332,7 @@ export class Board {
   protected readonly showLog = signal(false);
   /** Log filter: only entries for this node id, or all when null. */
   protected readonly logFilter = signal<string | null>(null);
-  private readonly logScroll =
-    viewChild<ElementRef<HTMLElement>>('logScroll');
+  private readonly logScroll = viewChild<ElementRef<HTMLElement>>('logScroll');
   /** Node id → title, for resolving log entry / filter labels. */
   private readonly nodeTitles = computed(() => {
     const m = new Map<string, string>();
@@ -348,7 +405,10 @@ export class Board {
     const rs = this.runStatuses();
     const ids = new Set<string>();
     for (const e of this.store.edges()) {
-      if (rs[e.source.nodeId] === 'success' && rs[e.target.nodeId] === 'running') {
+      if (
+        rs[e.source.nodeId] === 'success' &&
+        rs[e.target.nodeId] === 'running'
+      ) {
         ids.add(e.id);
       }
     }
@@ -381,9 +441,10 @@ export class Board {
   /** True while a connection is being drawn (lights up input ports). */
   protected readonly isConnecting = computed(() => this.draftPath() !== null);
   /** The input port a dragged connection will magnet-snap onto. */
-  protected readonly snapTarget = signal<{ nodeId: string; portId: string } | null>(
-    null,
-  );
+  protected readonly snapTarget = signal<{
+    nodeId: string;
+    portId: string;
+  } | null>(null);
   /** The node currently open in the inspector panel. */
   protected readonly inspectId = signal<string | null>(null);
   protected readonly inspectNode = computed(() => {
@@ -521,9 +582,15 @@ export class Board {
       this.guides.set(this.computeGuides(drag.nodeId));
     } else if (drag.mode === 'resize') {
       const board = this.store.viewport.screenToBoard(this.local(event));
-      const cols = drag.startCols + Math.round((board.x - drag.startBoard.x) / GRID_CELL);
-      const rows = drag.startRows + Math.round((board.y - drag.startBoard.y) / GRID_CELL);
-      if (cols === drag.startCols && rows === drag.startRows && !drag.recorded) {
+      const cols =
+        drag.startCols + Math.round((board.x - drag.startBoard.x) / GRID_CELL);
+      const rows =
+        drag.startRows + Math.round((board.y - drag.startBoard.y) / GRID_CELL);
+      if (
+        cols === drag.startCols &&
+        rows === drag.startRows &&
+        !drag.recorded
+      ) {
         return;
       }
       if (!drag.recorded) {
@@ -712,7 +779,10 @@ export class Board {
         break;
       case 'Enter': {
         const sel = [...this.store.selection()];
-        if (sel.length === 1 && this.store.nodes().some((n) => n.id === sel[0])) {
+        if (
+          sel.length === 1 &&
+          this.store.nodes().some((n) => n.id === sel[0])
+        ) {
           this.openInspector(sel[0]);
         }
         break;
@@ -790,6 +860,23 @@ export class Board {
   }
 
   // ── Node palette (drag-and-drop create + click-to-add) ───────────────────
+  protected paletteGroupOpen(label: string): boolean {
+    return this.paletteGroupState()[label] ?? true;
+  }
+
+  protected togglePaletteGroup(label: string): void {
+    this.paletteGroupState.update((state) => ({
+      ...state,
+      [label]: !this.paletteGroupOpen(label),
+    }));
+  }
+
+  protected paletteItemMeta(item: PaletteItem): string {
+    if (item.kind === 'trigger') return 'Trigger';
+    if (item.kind === 'effect') return 'Effect';
+    return this.titleCase(item.category ?? item.kind);
+  }
+
   protected onPaletteDragStart(item: PaletteItem, event: DragEvent): void {
     this.paletteDrag = {
       kind: item.kind,
@@ -825,7 +912,9 @@ export class Board {
     this.paletteDrag = null;
     if (this.readonly() || !spec) return;
     event.preventDefault();
-    const cell = snapToCell(this.store.viewport.screenToBoard(this.local(event)));
+    const cell = snapToCell(
+      this.store.viewport.screenToBoard(this.local(event)),
+    );
     this.store.addNode({
       kind: spec.kind,
       category: spec.category,
@@ -850,7 +939,9 @@ export class Board {
   protected onMinimapUp(event: PointerEvent): void {
     this.mmDragging = false;
     try {
-      (event.currentTarget as SVGElement).releasePointerCapture(event.pointerId);
+      (event.currentTarget as SVGElement).releasePointerCapture(
+        event.pointerId,
+      );
     } catch {
       /* already released */
     }
@@ -971,7 +1062,10 @@ export class Board {
     const id = `${Date.now().toString(36)}`;
     this.setConfig({
       ...c,
-      cases: [...c.cases, { id, label: `Case ${c.cases.length + 1}`, value: '' }],
+      cases: [
+        ...c.cases,
+        { id, label: `Case ${c.cases.length + 1}`, value: '' },
+      ],
     });
   }
 
@@ -987,7 +1081,9 @@ export class Board {
     if (c?.type === 'switch') {
       this.setConfig({
         ...c,
-        cases: c.cases.map((x) => (x.id === caseId ? { ...x, label: value } : x)),
+        cases: c.cases.map((x) =>
+          x.id === caseId ? { ...x, label: value } : x,
+        ),
       });
     }
   }
@@ -1025,7 +1121,11 @@ export class Board {
    * are pure expressions, so `template: false` inserts a bare `$node[...]`; string
    * params use `{{ … }}` template syntax.
    */
-  private contextRef(title: string, path: string | undefined, template: boolean): string {
+  private contextRef(
+    title: string,
+    path: string | undefined,
+    template: boolean,
+  ): string {
     const accessor = !path ? '' : path.startsWith('[') ? path : `.${path}`;
     const ref = `$node["${title}"]${accessor}`;
     return template ? `{{ ${ref} }}` : ref;
@@ -1069,7 +1169,11 @@ export class Board {
     }
   }
 
-  protected insertParamContext(key: string, node: BoardNode, path?: string): void {
+  protected insertParamContext(
+    key: string,
+    node: BoardNode,
+    path?: string,
+  ): void {
     const current = String(this.inspectNode()?.data?.[key] ?? '');
     const ref = this.contextRef(node.title, path, true);
     this.patchParam(key, `${current} ${ref}`.trim());
@@ -1376,13 +1480,17 @@ export class Board {
   }
 
   private local(event: { clientX: number; clientY: number }): Point {
-    const rect = this.hostEl.nativeElement.getBoundingClientRect();
+    const rect = this.surface().getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   }
 
   private size(): Size {
-    const el = this.hostEl.nativeElement;
+    const el = this.surface();
     return { width: el.clientWidth, height: el.clientHeight };
+  }
+
+  private surface(): HTMLElement {
+    return this.surfaceEl()?.nativeElement ?? this.hostEl.nativeElement;
   }
 
   /**

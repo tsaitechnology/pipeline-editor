@@ -1,854 +1,939 @@
-<pe-board-grid [pan]="store.viewport.pan()" [zoom]="store.viewport.zoom()" />
-
-<div
-  class="absolute inset-0 origin-top-left will-change-transform"
-  [style.transform]="store.viewport.transform()"
+<aside
+  [class]="paletteClasses()"
+  [hidden]="readonly()"
+  (pointerdown)="$event.stopPropagation()"
+  (wheel)="$event.stopPropagation()"
 >
-  <svg
-    class="absolute left-0 top-0 w-px h-px overflow-visible pointer-events-none"
+  <header
+    class="flex h-12 shrink-0 items-center gap-2 border-b border-border px-2"
   >
-    <defs>
-      <marker
-        id="pe-arrow"
-        viewBox="0 0 10 10"
-        refX="8"
-        refY="5"
-        markerWidth="7"
-        markerHeight="7"
-        orient="auto-start-reverse"
-      >
-        <path class="fill-[var(--edge)]" d="M 0 1 L 9 5 L 0 9 z" />
-      </marker>
-      <marker
-        id="pe-arrow-active"
-        viewBox="0 0 10 10"
-        refX="8"
-        refY="5"
-        markerWidth="7"
-        markerHeight="7"
-        orient="auto-start-reverse"
-      >
-        <path class="fill-[var(--accent)]" d="M 0 1 L 9 5 L 0 9 z" />
-      </marker>
-    </defs>
+    @if (!paletteCollapsed()) {
+    <div class="min-w-0 flex-1">
+      <div class="truncate text-sm font-semibold text-text">Nodes</div>
+      <div class="truncate text-[11px] text-text-3">Drag or click to add</div>
+    </div>
+    }
+    <button
+      type="button"
+      class="grid size-8 shrink-0 place-items-center rounded-sm text-text-2 transition-colors hover:bg-surface-3 hover:text-text"
+      [attr.aria-label]="
+        paletteCollapsed() ? 'Expand node palette' : 'Collapse node palette'
+      "
+      (click)="paletteCollapsed.set(!paletteCollapsed())"
+    >
+      <span class="text-base leading-none">
+        {{ paletteCollapsed() ? '›' : '‹' }}
+      </span>
+    </button>
+  </header>
 
-    @for (edge of store.edgeGeometries(); track edge.id) {
-    <g class="group cursor-pointer" (pointerdown)="onEdgeDown(edge.id, $event)">
-      <title>{{ edge.label }}</title>
-      <path
-        class="fill-none stroke-[transparent] [stroke-width:16] [pointer-events:stroke]"
-        [attr.d]="edge.path"
-      ></path>
-      <path
-        [class]="edgeClasses(edge.selected, activeEdgeIds().has(edge.id))"
-        [attr.d]="edge.path"
-        [attr.marker-end]="
+  @if (!paletteCollapsed()) {
+  <div class="border-b border-border p-3">
+    <tsai-input
+      type="search"
+      size="sm"
+      placeholder="Search nodes…"
+      [clearable]="true"
+      [value]="paletteSearch()"
+      (valueChange)="paletteSearch.set($event)"
+    />
+  </div>
+
+  <div class="min-h-0 flex-1 overflow-y-auto p-2">
+    @for (group of filteredPaletteGroups(); track group.label) {
+    <section class="mb-2">
+      <button
+        type="button"
+        class="flex h-8 w-full items-center justify-between rounded-sm px-2 text-left text-[11px] font-semibold uppercase tracking-wide text-text-3 transition-colors hover:bg-surface-3 hover:text-text-2"
+        [attr.aria-expanded]="paletteGroupOpen(group.label)"
+        (click)="togglePaletteGroup(group.label)"
+      >
+        <span>{{ group.label }}</span>
+        <span
+          class="text-sm transition-transform"
+          [class.rotate-90]="paletteGroupOpen(group.label)"
+        >
+          ›
+        </span>
+      </button>
+
+      @if (paletteGroupOpen(group.label)) {
+      <div class="flex flex-col gap-1">
+        @for (item of group.items; track item.label) {
+        <button
+          type="button"
+          class="group flex min-h-[68px] w-full cursor-grab items-start gap-3 rounded-md border border-border bg-surface-1 px-2.5 py-2 text-left transition-colors hover:border-[var(--node-accent)] hover:bg-surface-3 active:cursor-grabbing"
+          draggable="true"
+          [style.--node-accent]="item.color"
+          [attr.aria-label]="'Add ' + item.label + ' node'"
+          (dragstart)="onPaletteDragStart(item, $event)"
+          (click)="onPaletteClick(item)"
+        >
+          <span
+            class="mt-0.5 grid size-8 shrink-0 place-items-center rounded-sm text-[var(--node-accent)] bg-[color-mix(in_srgb,var(--node-accent)_14%,transparent)]"
+          >
+            <lucide-icon [img]="item.icon" [size]="16" />
+          </span>
+          <span class="min-w-0 flex-1">
+            <span class="flex min-w-0 items-center gap-2">
+              <span class="truncate text-sm font-medium text-text">
+                {{ item.label }}
+              </span>
+              <span
+                class="shrink-0 rounded-full bg-[color-mix(in_srgb,var(--node-accent)_12%,transparent)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--node-accent)]"
+              >
+                {{ paletteItemMeta(item) }}
+              </span>
+            </span>
+            <span class="mt-0.5 line-clamp-2 text-xs leading-snug text-text-3">
+              {{ item.description }}
+            </span>
+          </span>
+        </button>
+        }
+      </div>
+      }
+    </section>
+    } @empty {
+    <div class="px-2 py-6 text-center text-xs text-text-3">
+      No matching nodes.
+    </div>
+    }
+  </div>
+  }
+</aside>
+
+<div #surface [class]="surfaceClasses()">
+  <pe-board-grid [pan]="store.viewport.pan()" [zoom]="store.viewport.zoom()" />
+
+  <div
+    class="absolute inset-0 origin-top-left will-change-transform"
+    [style.transform]="store.viewport.transform()"
+  >
+    <svg
+      class="absolute left-0 top-0 w-px h-px overflow-visible pointer-events-none"
+    >
+      <defs>
+        <marker
+          id="pe-arrow"
+          viewBox="0 0 10 10"
+          refX="8"
+          refY="5"
+          markerWidth="7"
+          markerHeight="7"
+          orient="auto-start-reverse"
+        >
+          <path class="fill-[var(--edge)]" d="M 0 1 L 9 5 L 0 9 z" />
+        </marker>
+        <marker
+          id="pe-arrow-active"
+          viewBox="0 0 10 10"
+          refX="8"
+          refY="5"
+          markerWidth="7"
+          markerHeight="7"
+          orient="auto-start-reverse"
+        >
+          <path class="fill-[var(--accent)]" d="M 0 1 L 9 5 L 0 9 z" />
+        </marker>
+      </defs>
+
+      @for (edge of store.edgeGeometries(); track edge.id) {
+      <g
+        class="group cursor-pointer"
+        (pointerdown)="onEdgeDown(edge.id, $event)"
+      >
+        <title>{{ edge.label }}</title>
+        <path
+          class="fill-none stroke-[transparent] [stroke-width:16] [pointer-events:stroke]"
+          [attr.d]="edge.path"
+        ></path>
+        <path
+          [class]="edgeClasses(edge.selected, activeEdgeIds().has(edge.id))"
+          [attr.d]="edge.path"
+          [attr.marker-end]="
             edge.selected || activeEdgeIds().has(edge.id)
               ? 'url(#pe-arrow-active)'
               : 'url(#pe-arrow)'
           "
+        ></path>
+        @if (edge.midLabel; as ml) {
+        <text
+          class="fill-[var(--text-2)] stroke-[var(--canvas-bg)] [stroke-width:3] [paint-order:stroke] text-[10px] font-medium [pointer-events:none] select-none"
+          text-anchor="middle"
+          dominant-baseline="central"
+          [attr.x]="edge.mid.x"
+          [attr.y]="edge.mid.y"
+        >
+          {{ ml }}
+        </text>
+        }
+      </g>
+      } @if (draftPath(); as d) {
+      <path
+        class="fill-none stroke-[var(--accent)] [stroke-width:2] [stroke-dasharray:6_5] [pointer-events:none]"
+        [attr.d]="d"
+        marker-end="url(#pe-arrow-active)"
       ></path>
-      @if (edge.midLabel; as ml) {
-      <text
-        class="fill-[var(--text-2)] stroke-[var(--canvas-bg)] [stroke-width:3] [paint-order:stroke] text-[10px] font-medium [pointer-events:none] select-none"
-        text-anchor="middle"
-        dominant-baseline="central"
-        [attr.x]="edge.mid.x"
-        [attr.y]="edge.mid.y"
-      >
-        {{ ml }}
-      </text>
+      } @for (g of guides(); track $index) {
+      <line
+        class="stroke-[var(--accent)] [stroke-width:1] [stroke-dasharray:4_3] opacity-70 [pointer-events:none]"
+        [attr.x1]="g.x1"
+        [attr.y1]="g.y1"
+        [attr.x2]="g.x2"
+        [attr.y2]="g.y2"
+      ></line>
       }
-    </g>
-    } @if (draftPath(); as d) {
-    <path
-      class="fill-none stroke-[var(--accent)] [stroke-width:2] [stroke-dasharray:6_5] [pointer-events:none]"
-      [attr.d]="d"
-      marker-end="url(#pe-arrow-active)"
-    ></path>
-    } @for (g of guides(); track $index) {
-    <line
-      class="stroke-[var(--accent)] [stroke-width:1] [stroke-dasharray:4_3] opacity-70 [pointer-events:none]"
-      [attr.x1]="g.x1"
-      [attr.y1]="g.y1"
-      [attr.x2]="g.x2"
-      [attr.y2]="g.y2"
-    ></line>
-    }
-  </svg>
+    </svg>
 
-  @for (node of orderedNodes(); track node.id) {
-  <pe-node
-    [node]="node"
-    [selected]="store.isSelected(node.id)"
-    [connecting]="isConnecting()"
-    [resizable]="!readonly()"
-    [runStatus]="runStatuses()[node.id]"
-    [runError]="runErrors()[node.id]"
-    [progress]="runProgress()[node.id]"
-    [targetPort]="
+    @for (node of orderedNodes(); track node.id) {
+    <pe-node
+      [node]="node"
+      [selected]="store.isSelected(node.id)"
+      [connecting]="isConnecting()"
+      [resizable]="!readonly()"
+      [runStatus]="runStatuses()[node.id]"
+      [runError]="runErrors()[node.id]"
+      [progress]="runProgress()[node.id]"
+      [targetPort]="
         snapTarget()?.nodeId === node.id ? snapTarget()!.portId : null
       "
-    (bodyPointerDown)="onNodeDown(node, $event)"
-    (portPointerDown)="onPortDown(node, $event)"
-    (openRequested)="openInspector(node.id)"
-    (resizePointerDown)="onResizeDown(node, $event)"
-    (resizeAuto)="onResizeAuto(node)"
-  />
-  }
-</div>
-
-@if (!store.nodes().length) {
-<div
-  class="absolute inset-0 grid place-items-center pointer-events-none"
-  aria-hidden="true"
->
-  <div class="flex flex-col items-center gap-1 text-center">
-    <span class="text-sm font-medium text-text-2">Empty canvas</span>
-    <span class="text-xs text-text-3"
-      >Drag a node from the palette, or right-click to add one</span
-    >
+      (bodyPointerDown)="onNodeDown(node, $event)"
+      (portPointerDown)="onPortDown(node, $event)"
+      (openRequested)="openInspector(node.id)"
+      (resizePointerDown)="onResizeDown(node, $event)"
+      (resizeAuto)="onResizeAuto(node)"
+    />
+    }
   </div>
-</div>
-} @if (marquee(); as m) {
-<div
-  class="absolute z-[15] pointer-events-none border border-[var(--accent)] bg-[var(--accent-quiet)] rounded-[2px]"
-  aria-hidden="true"
-  [style.left.px]="m.x"
-  [style.top.px]="m.y"
-  [style.width.px]="m.width"
-  [style.height.px]="m.height"
-></div>
-}
 
-<div
-  class="absolute right-3 top-3 z-[18] flex items-center gap-1 p-1 border border-[var(--border)] rounded-[var(--r-md)] bg-[var(--surface-2)] shadow-[var(--elev-1)]"
-  (pointerdown)="$event.stopPropagation()"
->
-  @if (canRun) {
-  <button
-    type="button"
-    class="h-[30px] px-3 text-xs font-semibold rounded-[var(--r-sm)] cursor-pointer text-white"
-    [class]="
+  @if (!store.nodes().length) {
+  <div
+    class="absolute inset-0 grid place-items-center pointer-events-none"
+    aria-hidden="true"
+  >
+    <div class="flex flex-col items-center gap-1 text-center">
+      <span class="text-sm font-medium text-text-2">Empty canvas</span>
+      <span class="text-xs text-text-3"
+        >Drag a node from the palette, or right-click to add one</span
+      >
+    </div>
+  </div>
+  } @if (marquee(); as m) {
+  <div
+    class="absolute z-[15] pointer-events-none border border-[var(--accent)] bg-[var(--accent-quiet)] rounded-[2px]"
+    aria-hidden="true"
+    [style.left.px]="m.x"
+    [style.top.px]="m.y"
+    [style.width.px]="m.width"
+    [style.height.px]="m.height"
+  ></div>
+  }
+
+  <div
+    class="absolute right-3 top-3 z-[18] flex items-center gap-1 p-1 border border-[var(--border)] rounded-[var(--r-md)] bg-[var(--surface-2)] shadow-[var(--elev-1)]"
+    (pointerdown)="$event.stopPropagation()"
+  >
+    @if (canRun) {
+    <button
+      type="button"
+      class="h-[30px] px-3 text-xs font-semibold rounded-[var(--r-sm)] cursor-pointer text-white"
+      [class]="
         running()
           ? 'bg-[var(--danger)]'
           : 'bg-[var(--success)] disabled:opacity-50'
       "
-    [disabled]="!running() && errorCount() > 0"
-    (click)="toggleRun()"
-  >
-    {{ running() ? '■ Stop' : '▶ Run' }}
-  </button>
-  @if (run(); as r) {
-  <button
-    type="button"
-    class="h-[30px] px-2.5 text-xs font-semibold rounded-[var(--r-sm)] cursor-pointer capitalize"
-    [class]="
+      [disabled]="!running() && errorCount() > 0"
+      (click)="toggleRun()"
+    >
+      {{ running() ? '■ Stop' : '▶ Run' }}
+    </button>
+    @if (run(); as r) {
+    <button
+      type="button"
+      class="h-[30px] px-2.5 text-xs font-semibold rounded-[var(--r-sm)] cursor-pointer capitalize"
+      [class]="
           r.status === 'error'
             ? 'text-[var(--danger)] bg-[var(--danger-quiet)]'
             : r.status === 'success'
               ? 'text-[var(--success)] bg-[var(--success-quiet)]'
               : 'text-[var(--accent)] bg-[var(--accent-quiet)]'
         "
-    (click)="showLog.set(!showLog())"
-  >
-    {{ r.status }}
-  </button>
-  }
-  <span class="w-px my-[3px] mx-0.5 bg-[var(--border)]"></span>
-  } @if (canPersist) { @if (!readonly()) {
-  <button type="button" [class]="cls.toolbarBtn" (click)="savePipeline()">
-    {{ justSaved() ? '✓ Saved' : 'Save' }}
-  </button>
-  }
-  <button type="button" [class]="cls.toolbarBtn" (click)="openPicker()">
-    Open
-  </button>
-  <span class="w-px my-[3px] mx-0.5 bg-[var(--border)]"></span>
-  }
-  <button type="button" [class]="cls.toolbarBtn" (click)="exportJson()">
-    Export
-  </button>
-  @if (!readonly()) {
-  <button type="button" [class]="cls.toolbarBtn" (click)="fileInput.click()">
-    Import
-  </button>
-  <input
-    #fileInput
-    type="file"
-    accept="application/json"
-    hidden
-    (change)="onImportFile($event)"
-  />
-  }
-  <button
-    type="button"
-    class="h-[30px] px-2.5 text-xs font-semibold rounded-[var(--r-sm)] cursor-pointer whitespace-nowrap"
-    [class]="statusClass()"
-    (click)="toggleIssues()"
-  >
-    @if (errorCount() > 0) { {{ errorCount() }} error{{ errorCount() > 1 ? 's' :
-    '' }} } @else if (warningCount() > 0) { {{ warningCount() }} warning{{
-    warningCount() > 1 ? 's' : '' }} } @else { ✓ Valid }
-  </button>
-</div>
+      (click)="showLog.set(!showLog())"
+    >
+      {{ r.status }}
+    </button>
+    }
+    <span class="w-px my-[3px] mx-0.5 bg-[var(--border)]"></span>
+    } @if (canPersist) { @if (!readonly()) {
+    <button type="button" [class]="cls.toolbarBtn" (click)="savePipeline()">
+      {{ justSaved() ? '✓ Saved' : 'Save' }}
+    </button>
+    }
+    <button type="button" [class]="cls.toolbarBtn" (click)="openPicker()">
+      Open
+    </button>
+    <span class="w-px my-[3px] mx-0.5 bg-[var(--border)]"></span>
+    }
+    <button type="button" [class]="cls.toolbarBtn" (click)="exportJson()">
+      Export
+    </button>
+    @if (!readonly()) {
+    <button type="button" [class]="cls.toolbarBtn" (click)="fileInput.click()">
+      Import
+    </button>
+    <input
+      #fileInput
+      type="file"
+      accept="application/json"
+      hidden
+      (change)="onImportFile($event)"
+    />
+    }
+    <button
+      type="button"
+      class="h-[30px] px-2.5 text-xs font-semibold rounded-[var(--r-sm)] cursor-pointer whitespace-nowrap"
+      [class]="statusClass()"
+      (click)="toggleIssues()"
+    >
+      @if (errorCount() > 0) { {{ errorCount() }} error{{ errorCount() > 1 ? 's'
+      : '' }} } @else if (warningCount() > 0) { {{ warningCount() }} warning{{
+      warningCount() > 1 ? 's' : '' }} } @else { ✓ Valid }
+    </button>
+  </div>
 
-@if (showIssues() && store.issues().length) {
-<div
-  class="absolute right-3 top-[54px] z-[18] w-[260px] max-h-[40%] overflow-y-auto flex flex-col gap-px p-1.5 border border-[var(--border)] rounded-[var(--r-md)] bg-[var(--surface-2)] shadow-[var(--elev-2)]"
-  (pointerdown)="$event.stopPropagation()"
-  (wheel)="$event.stopPropagation()"
->
-  @for (issue of store.issues(); track $index) {
-  <button
-    type="button"
-    class="flex px-[9px] py-[7px] text-xs text-left rounded-[var(--r-sm)] cursor-pointer transition-colors duration-150 hover:bg-[var(--surface-3)]"
-    [class]="
+  @if (showIssues() && store.issues().length) {
+  <div
+    class="absolute right-3 top-[54px] z-[18] w-[260px] max-h-[40%] overflow-y-auto flex flex-col gap-px p-1.5 border border-[var(--border)] rounded-[var(--r-md)] bg-[var(--surface-2)] shadow-[var(--elev-2)]"
+    (pointerdown)="$event.stopPropagation()"
+    (wheel)="$event.stopPropagation()"
+  >
+    @for (issue of store.issues(); track $index) {
+    <button
+      type="button"
+      class="flex px-[9px] py-[7px] text-xs text-left rounded-[var(--r-sm)] cursor-pointer transition-colors duration-150 hover:bg-[var(--surface-3)]"
+      [class]="
           issue.severity === 'warning'
             ? 'text-[var(--warning)]'
             : 'text-[var(--danger)]'
         "
-    (click)="focusIssue(issue)"
-  >
-    {{ issue.message }}
-  </button>
-  }
-</div>
-}
-
-<aside
-  class="absolute left-3 top-3 z-[18] flex flex-col gap-0.5 w-[168px] max-h-[calc(100%-24px)] overflow-y-auto p-2 border border-[var(--border)] rounded-[var(--r-md)] bg-[var(--surface-2)] shadow-[var(--elev-1)]"
-  [hidden]="readonly()"
-  (pointerdown)="$event.stopPropagation()"
->
-  @for (group of paletteGroups; track group.label) {
-  <span [class]="cls.menuLabel">{{ group.label }}</span>
-  @for (item of group.items; track item.label) {
-  <button
-    type="button"
-    class="flex items-center gap-[9px] px-2 py-1.5 text-[0.8125rem] text-text text-left rounded-[var(--r-sm)] cursor-grab transition-colors duration-150 hover:bg-[var(--surface-3)] active:cursor-grabbing"
-    draggable="true"
-    [style.--node-accent]="item.color"
-    [attr.aria-label]="'Add ' + item.label + ' node'"
-    (dragstart)="onPaletteDragStart(item, $event)"
-    (click)="onPaletteClick(item)"
-  >
-    <span
-      class="grid place-items-center w-6 h-6 shrink-0 rounded-[6px] text-[var(--node-accent)] bg-[color-mix(in_srgb,var(--node-accent)_14%,transparent)]"
+      (click)="focusIssue(issue)"
     >
-      <lucide-icon [img]="item.icon" [size]="15" />
-    </span>
-    {{ item.label }}
-  </button>
-  } }
-</aside>
-
-<div
-  class="absolute right-3 bottom-3 z-[18] flex gap-1 p-1 border border-[var(--border)] rounded-[var(--r-md)] bg-[var(--surface-2)] shadow-[var(--elev-1)]"
-  (pointerdown)="$event.stopPropagation()"
->
-  <button
-    type="button"
-    [class]="cls.toolbarBtn"
-    aria-label="Undo"
-    [disabled]="!store.canUndo()"
-    (click)="undo()"
-  >
-    ↶
-  </button>
-  <button
-    type="button"
-    [class]="cls.toolbarBtn"
-    aria-label="Redo"
-    [disabled]="!store.canRedo()"
-    (click)="redo()"
-  >
-    ↷
-  </button>
-  <span class="w-px my-[3px] mx-0.5 bg-[var(--border)]"></span>
-  <button
-    type="button"
-    [class]="cls.toolbarBtn"
-    aria-label="Zoom out"
-    (click)="zoomOut()"
-  >
-    −
-  </button>
-  <button
-    type="button"
-    [class]="cls.toolbarBtn"
-    aria-label="Zoom in"
-    (click)="zoomIn()"
-  >
-    +
-  </button>
-  <button
-    type="button"
-    [class]="cls.toolbarBtn"
-    aria-label="Fit to content"
-    (click)="fitView()"
-  >
-    Fit
-  </button>
-  <button
-    type="button"
-    [class]="cls.toolbarBtn"
-    aria-label="Reset view"
-    (click)="resetView()"
-  >
-    1:1
-  </button>
-</div>
-
-@if (minimap(); as mm) {
-<svg
-  class="absolute left-3 bottom-3 z-[18] w-[190px] h-[120px] border border-[var(--border)] rounded-[var(--r-md)] bg-[color-mix(in_srgb,var(--canvas-bg)_82%,var(--surface-2))] shadow-[var(--elev-1)] cursor-pointer touch-none"
-  viewBox="0 0 190 120"
-  aria-label="Minimap"
-  (pointerdown)="onMinimapDown($event)"
-  (pointermove)="onMinimapMove($event)"
-  (pointerup)="onMinimapUp($event)"
-  (pointercancel)="onMinimapUp($event)"
->
-  @for (n of mm.nodes; track $index) {
-  <rect
-    [attr.x]="n.x"
-    [attr.y]="n.y"
-    [attr.width]="n.w"
-    [attr.height]="n.h"
-    rx="1.5"
-    [attr.fill]="n.fill"
-    [attr.fill-opacity]="n.selected ? 1 : 0.6"
-  ></rect>
+      {{ issue.message }}
+    </button>
+    }
+  </div>
   }
-  <rect
-    class="fill-[var(--accent-quiet)] stroke-[var(--accent)] [stroke-width:1]"
-    [attr.x]="mm.view.x"
-    [attr.y]="mm.view.y"
-    [attr.width]="mm.view.w"
-    [attr.height]="mm.view.h"
-  ></rect>
-</svg>
-} @if (showLog() && run(); as r) {
-<div
-  class="absolute left-1/2 -translate-x-1/2 bottom-3 z-[19] w-[420px] max-w-[70%] max-h-[38%] flex flex-col border border-[var(--border)] rounded-[var(--r-md)] bg-[var(--surface-2)] shadow-[var(--elev-2)]"
-  (pointerdown)="$event.stopPropagation()"
-  (wheel)="$event.stopPropagation()"
->
-  <header
-    class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)]"
-  >
-    <span class="text-xs font-semibold text-text-2">
-      Run log · <span class="capitalize">{{ r.status }}</span>
-    </span>
-    <div class="flex items-center gap-1">
-      @if (logNodes().length) {
-      <select
-        class="h-6 max-w-[130px] px-1.5 text-[11px] rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--surface-1)] text-text-2"
-        aria-label="Filter log by node"
-        [value]="logFilter() ?? ''"
-        (change)="logFilter.set($any($event.target).value || null)"
-      >
-        <option value="">All nodes</option>
-        @for (n of logNodes(); track n.id) {
-        <option [value]="n.id">{{ n.title }}</option>
-        }
-      </select>
-      }
-      <button
-        type="button"
-        class="px-2 h-6 text-[11px] rounded-[var(--r-sm)] text-text-2 hover:bg-[var(--surface-3)]"
-        (click)="clearRun()"
-      >
-        Clear
-      </button>
-      <button
-        type="button"
-        class="grid place-items-center w-6 h-6 text-text-2 rounded-[var(--r-sm)] hover:bg-[var(--surface-3)]"
-        aria-label="Hide log"
-        (click)="showLog.set(false)"
-      >
-        ✕
-      </button>
-    </div>
-  </header>
+
   <div
-    #logScroll
-    class="flex-1 overflow-y-auto px-3 py-2 flex flex-col gap-0.5 font-mono text-[11px] text-text-2 select-text cursor-text"
+    class="absolute right-3 bottom-3 z-[18] flex gap-1 p-1 border border-[var(--border)] rounded-[var(--r-md)] bg-[var(--surface-2)] shadow-[var(--elev-1)]"
+    (pointerdown)="$event.stopPropagation()"
   >
-    @for (e of logEntries(); track $index) {
-    <div class="flex gap-2">
-      <span class="shrink-0 text-text-3 tabular-nums"
-        >{{ formatLogTime(e.at) }}</span
-      >
-      @if (e.node) {
-      <span class="shrink-0 text-[var(--accent)]">{{ e.node }}</span>
-      }
-      <span class="min-w-0">{{ e.message }}</span>
-    </div>
-    } @empty {
-    <div class="text-text-3">No log entries for this filter.</div>
-    }
-  </div>
-</div>
-} @if (menu(); as m) {
-<div
-  class="absolute z-[20] min-w-[172px] p-1.5 flex flex-col gap-px border border-[var(--border)] rounded-[var(--r-md)] bg-[var(--surface-2)] shadow-[var(--elev-2)]"
-  role="menu"
-  [style.left.px]="m.x"
-  [style.top.px]="m.y"
-  (pointerdown)="$event.stopPropagation()"
->
-  @if (m.nodeId) {
-  <button
-    type="button"
-    role="menuitem"
-    [class]="cls.menuItem"
-    (click)="editNodeFromMenu()"
-  >
-    {{ readonly() ? 'Inspect node…' : 'Edit node…' }}
-  </button>
-  @if (!readonly()) {
-  <button
-    type="button"
-    role="menuitem"
-    [class]="cls.menuItemDanger"
-    (click)="deleteNode()"
-  >
-    Delete node
-  </button>
-  }
-  <div [class]="cls.sep"></div>
-  <button
-    type="button"
-    role="menuitem"
-    [class]="cls.menuItem"
-    (click)="resetView()"
-  >
-    Reset view
-  </button>
-  } @else if (readonly()) {
-  <button
-    type="button"
-    role="menuitem"
-    [class]="cls.menuItem"
-    (click)="resetView()"
-  >
-    Reset view
-  </button>
-  } @else {
-  <div [class]="cls.menuLabel">Add node</div>
-  <button
-    type="button"
-    role="menuitem"
-    [class]="cls.menuItem"
-    (click)="addNode('trigger')"
-  >
-    Trigger
-  </button>
-  <button
-    type="button"
-    role="menuitem"
-    [class]="cls.menuItem"
-    (click)="addNode('action', 'integration')"
-  >
-    Integration
-  </button>
-  <button
-    type="button"
-    role="menuitem"
-    [class]="cls.menuItem"
-    (click)="addNode('action', 'transform')"
-  >
-    Transform
-  </button>
-  <button
-    type="button"
-    role="menuitem"
-    [class]="cls.menuItem"
-    (click)="addNode('action', 'control-flow')"
-  >
-    Control flow
-  </button>
-  <button
-    type="button"
-    role="menuitem"
-    [class]="cls.menuItem"
-    (click)="addNode('action', 'split')"
-  >
-    Split
-  </button>
-  <button
-    type="button"
-    role="menuitem"
-    [class]="cls.menuItem"
-    (click)="addNode('action', 'merge')"
-  >
-    Merge
-  </button>
-  <button
-    type="button"
-    role="menuitem"
-    [class]="cls.menuItem"
-    (click)="addNode('effect')"
-  >
-    Effect
-  </button>
-  <div [class]="cls.sep"></div>
-  <button
-    type="button"
-    role="menuitem"
-    [class]="cls.menuItem"
-    (click)="resetView()"
-  >
-    Reset view
-  </button>
-  }
-</div>
-} @if (inspectNode(); as n) {
-<aside
-  class="absolute right-3 top-[54px] bottom-3 z-[19] w-[264px] flex flex-col gap-3 p-3.5 overflow-y-auto border border-[var(--border)] rounded-[var(--r-md)] bg-[var(--surface-2)] shadow-[var(--elev-2)]"
-  (pointerdown)="$event.stopPropagation()"
-  (wheel)="$event.stopPropagation()"
->
-  <header class="flex items-center justify-between">
-    <span
-      class="text-[0.6875rem] font-semibold tracking-[0.04em] uppercase text-[var(--accent)]"
-    >
-      {{ catalogLabel(n) }}
-    </span>
     <button
       type="button"
-      class="grid place-items-center w-6 h-6 text-text-2 rounded-[var(--r-sm)] cursor-pointer hover:text-text hover:bg-[var(--surface-3)]"
-      aria-label="Close inspector"
-      (click)="closeInspector()"
+      [class]="cls.toolbarBtn"
+      aria-label="Undo"
+      [disabled]="!store.canUndo()"
+      (click)="undo()"
     >
-      ✕
+      ↶
     </button>
-  </header>
-
-  <label [class]="cls.field">
-    <span [class]="cls.fieldLabel">Title</span>
-    <input
-      [class]="cls.fieldInput"
-      type="text"
-      [value]="n.title"
-      [disabled]="readonly()"
-      (change)="patchTitle($any($event.target).value)"
-    />
-  </label>
-
-  <label [class]="cls.field">
-    <span [class]="cls.fieldLabel">Subtitle</span>
-    <input
-      [class]="cls.fieldInput"
-      type="text"
-      [value]="n.subtitle ?? ''"
-      [disabled]="readonly()"
-      (change)="patchSubtitle($any($event.target).value)"
-    />
-  </label>
-
-  @if (!isCf(n) && params(n).length) {
-  <div class="h-px bg-[var(--border)]"></div>
-  <span class="text-xs font-semibold text-text-2">Parameters</span>
-  @for (f of params(n); track f.key) { @switch (f.type) { @case ('boolean') {
-  <label class="flex flex-row items-center gap-2">
-    <input
-      type="checkbox"
-      [checked]="paramChecked(n, f.key)"
-      [disabled]="readonly()"
-      (change)="patchParam(f.key, $any($event.target).checked)"
-    />
-    <span [class]="cls.fieldLabel">{{ f.label }}</span>
-  </label>
-  } @case ('select') {
-  <label [class]="cls.field">
-    <span [class]="cls.fieldLabel">{{ f.label }}</span>
-    <select
-      [class]="cls.fieldInput"
-      [disabled]="readonly()"
-      (change)="patchParam(f.key, $any($event.target).value)"
-    >
-      <option value="" [selected]="!paramValue(n, f.key)">—</option>
-      @for (o of f.options; track o.value) {
-      <option [value]="o.value" [selected]="o.value === paramValue(n, f.key)">
-        {{ o.label }}
-      </option>
-      }
-    </select>
-  </label>
-  } @case ('textarea') {
-  <label [class]="cls.field">
-    <span [class]="cls.fieldLabel">{{ f.label }}</span>
-    <textarea
-      [class]="cls.fieldInput + ' font-mono min-h-[64px]'"
-      [placeholder]="f.placeholder ?? ''"
-      [value]="paramValue(n, f.key)"
-      [disabled]="readonly()"
-      (change)="patchParam(f.key, $any($event.target).value)"
-    ></textarea>
-  </label>
-  } @default {
-  <label [class]="cls.field">
-    <span [class]="cls.fieldLabel">{{ f.label }}</span>
-    <input
-      [class]="
-                  cls.fieldInput + (f.type === 'expression' ? ' font-mono' : '')
-                "
-      [type]="f.type === 'number' ? 'number' : 'text'"
-      [placeholder]="f.placeholder ?? ''"
-      [value]="paramValue(n, f.key)"
-      [disabled]="readonly()"
-      (change)="patchParam(f.key, $any($event.target).value)"
-    />
-    @if (f.type === 'expression') {
-    <span [class]="cls.hint">{{ exprSyntax.template }}</span>
-    } @if (f.type === 'expression' && context().length && !readonly()) {
-    <div class="flex flex-wrap gap-1">
-      @for (cn of context(); track cn.id) {
-      <button
-        type="button"
-        class="px-2 py-0.5 text-[11px] rounded-full border border-[var(--border)] text-text-2 cursor-pointer hover:bg-[var(--surface-3)]"
-        (click)="insertParamContext(f.key, cn)"
-      >
-        {{ cn.title }}
-      </button>
-      @for (p of varPaths(cn); track p) {
-      <button
-        type="button"
-        class="px-2 py-0.5 font-mono text-[11px] rounded-full border border-[var(--border)] text-[var(--accent)] cursor-pointer hover:bg-[var(--surface-3)]"
-        [title]="'Insert ' + cn.title + '.' + p"
-        (click)="insertParamContext(f.key, cn, p)"
-      >
-        .{{ p }}
-      </button>
-      } }
-    </div>
-    }
-  </label>
-  } } } } @if (n.kind === 'action' && n.category === 'merge') {
-  <label [class]="cls.field">
-    <span [class]="cls.fieldLabel">Buffer size</span>
-    <input
-      [class]="cls.fieldInput"
-      type="number"
-      min="1"
-      [value]="n.bufferSize ?? 1"
-      [disabled]="readonly()"
-      (change)="patchBuffer($any($event.target).value)"
-    />
-  </label>
-  } @if (n.kind === 'effect') {
-  <label class="flex flex-row items-center gap-2">
-    <input
-      type="checkbox"
-      [checked]="n.required !== false"
-      [disabled]="readonly()"
-      (change)="patchRequired($any($event.target).checked)"
-    />
-    <span [class]="cls.fieldLabel">Required (failure fails the run)</span>
-  </label>
-  } @if (isCf(n)) {
-  <div class="h-px bg-[var(--border)]"></div>
-
-  <div [class]="cls.field">
-    <span [class]="cls.fieldLabel">Control flow</span>
-    <div class="flex gap-1">
-      @for (t of cfTypes; track t) {
-      <button
-        type="button"
-        [class]="cfTypeClass(t)"
-        [disabled]="readonly()"
-        (click)="setControlFlowType(t)"
-      >
-        {{ t }}
-      </button>
-      }
-    </div>
-  </div>
-
-  @if (exprCfg(); as e) {
-  <label [class]="cls.field">
-    <span [class]="cls.fieldLabel"
-      >{{ e.type === 'filter' ? 'Keep when' : 'Condition' }}</span
-    >
-    <input
-      [class]="cls.fieldInput"
-      type="text"
-      placeholder="$json.count > 5"
-      [value]="e.expression"
-      [disabled]="readonly()"
-      (change)="patchExpression($any($event.target).value)"
-    />
-    <span [class]="cls.hint">{{ exprSyntax.condition }}</span>
-  </label>
-  } @if (switchCfg(); as sw) {
-  <label [class]="cls.field">
-    <span [class]="cls.fieldLabel">Discriminant</span>
-    <input
-      [class]="cls.fieldInput"
-      type="text"
-      placeholder="$json.source"
-      [value]="sw.discriminant"
-      [disabled]="readonly()"
-      (change)="patchDiscriminant($any($event.target).value)"
-    />
-    <span [class]="cls.hint">{{ exprSyntax.condition }}</span>
-  </label>
-
-  <div [class]="cls.field">
-    <span [class]="cls.fieldLabel">Cases → outputs</span>
-    <span [class]="cls.hint">
-      The <b>match value</b> is compared to the discriminant (routes here when
-      equal). The <b>label</b> only names the output port.
-    </span>
-    <div class="flex items-center gap-1">
-      <span [class]="cls.hint + ' flex-1'">Output label</span>
-      <span [class]="cls.hint + ' flex-1'">Match value (= discriminant)</span>
-      <span class="w-7 shrink-0"></span>
-    </div>
-    @for (c of sw.cases; track c.id) {
-    <div class="flex items-center gap-1">
-      <input
-        [class]="cls.fieldInput + ' flex-1'"
-        type="text"
-        placeholder="e.g. WhatsApp"
-        [value]="c.label"
-        [disabled]="readonly()"
-        (change)="patchCaseLabel(c.id, $any($event.target).value)"
-      />
-      <input
-        [class]="cls.fieldInput + ' flex-1 font-mono'"
-        type="text"
-        placeholder="e.g. whatsapp"
-        [value]="c.value"
-        [disabled]="readonly()"
-        (change)="patchCaseValue(c.id, $any($event.target).value)"
-      />
-      @if (!readonly()) {
-      <button
-        type="button"
-        class="shrink-0 grid place-items-center w-7 h-7 text-text-2 rounded-[var(--r-sm)] hover:text-[var(--danger)] hover:bg-[var(--danger-quiet)]"
-        aria-label="Remove case"
-        (click)="removeCase(c.id)"
-      >
-        ✕
-      </button>
-      }
-    </div>
-    } @if (!readonly()) {
     <button
       type="button"
-      class="mt-1 flex items-center justify-center px-2.5 py-[7px] text-[0.8125rem] text-text-2 rounded-[var(--r-sm)] border border-dashed border-[var(--border)] cursor-pointer hover:bg-[var(--surface-3)]"
-      (click)="addCase()"
+      [class]="cls.toolbarBtn"
+      aria-label="Redo"
+      [disabled]="!store.canRedo()"
+      (click)="redo()"
     >
-      + Add case
+      ↷
     </button>
-    }
+    <span class="w-px my-[3px] mx-0.5 bg-[var(--border)]"></span>
+    <button
+      type="button"
+      [class]="cls.toolbarBtn"
+      aria-label="Zoom out"
+      (click)="zoomOut()"
+    >
+      −
+    </button>
+    <button
+      type="button"
+      [class]="cls.toolbarBtn"
+      aria-label="Zoom in"
+      (click)="zoomIn()"
+    >
+      +
+    </button>
+    <button
+      type="button"
+      [class]="cls.toolbarBtn"
+      aria-label="Fit to content"
+      (click)="fitView()"
+    >
+      Fit
+    </button>
+    <button
+      type="button"
+      [class]="cls.toolbarBtn"
+      aria-label="Reset view"
+      (click)="resetView()"
+    >
+      1:1
+    </button>
   </div>
 
-  <label class="flex flex-row items-center gap-2">
-    <input
-      type="checkbox"
-      [checked]="sw.hasDefault"
-      [disabled]="readonly()"
-      (change)="toggleDefault($any($event.target).checked)"
-    />
-    <span [class]="cls.fieldLabel">Default branch</span>
-  </label>
-  } @if (context().length) {
-  <div [class]="cls.field">
-    <span [class]="cls.fieldLabel">Pipeline context</span>
-    <div class="flex flex-wrap gap-1">
-      @for (cn of context(); track cn.id) {
-      <button
-        type="button"
-        class="px-2 py-1 text-[11px] rounded-full border border-[var(--border)] text-text-2 cursor-pointer hover:bg-[var(--surface-3)] disabled:opacity-50"
-        [title]="'Insert a reference to ' + cn.title"
-        [disabled]="readonly()"
-        (click)="insertContext(cn)"
-      >
-        {{ cn.title }}
-      </button>
-      @for (p of varPaths(cn); track p) {
-      <button
-        type="button"
-        class="px-2 py-1 font-mono text-[11px] rounded-full border border-[var(--border)] text-[var(--accent)] cursor-pointer hover:bg-[var(--surface-3)] disabled:opacity-50"
-        [title]="'Insert ' + cn.title + '.' + p"
-        [disabled]="readonly()"
-        (click)="insertContext(cn, p)"
-      >
-        .{{ p }}
-      </button>
-      } }
-    </div>
-  </div>
-  } } @if (inspectedRun(); as ir) {
-  <div class="h-px bg-[var(--border)]"></div>
-  <span class="text-xs font-semibold text-text-2">
-    Run data · <span class="capitalize">{{ ir.status }}</span>
-  </span>
-  @if (ir.error) {
-  <div class="text-[11px] text-[var(--danger)]">{{ ir.error }}</div>
-  } @if (ir.output !== undefined) {
-  <pre
-    class="max-h-40 overflow-auto p-2 rounded-[var(--r-sm)] bg-[var(--surface-1)] border border-[var(--border)] font-mono text-[11px] text-text-2 whitespace-pre-wrap select-text cursor-text"
+  @if (minimap(); as mm) {
+  <svg
+    class="absolute left-3 bottom-3 z-[18] w-[190px] h-[120px] border border-[var(--border)] rounded-[var(--r-md)] bg-[color-mix(in_srgb,var(--canvas-bg)_82%,var(--surface-2))] shadow-[var(--elev-1)] cursor-pointer touch-none"
+    viewBox="0 0 190 120"
+    aria-label="Minimap"
+    (pointerdown)="onMinimapDown($event)"
+    (pointermove)="onMinimapMove($event)"
+    (pointerup)="onMinimapUp($event)"
+    (pointercancel)="onMinimapUp($event)"
   >
-{{ json(ir.output) }}</pre>
-  } }
-</aside>
-}
-
-<!-- Delete confirmation -->
-<tsai-dialog
-  [(open)]="confirmOpen"
-  size="sm"
-  title="Delete?"
-  (closed)="cancelDelete()"
->
-  {{ confirmMessage() }}
-  <ng-container dialog-footer>
-    <tsai-button variant="ghost" (click)="cancelDelete()">Cancel</tsai-button>
-    <tsai-button variant="danger" (click)="confirmDelete()">Delete</tsai-button>
-  </ng-container>
-</tsai-dialog>
-
-<!-- Open saved pipeline -->
-<tsai-dialog [(open)]="showOpen" size="sm" title="Open pipeline">
-  @if (savedPipelines().length) {
-  <ul class="flex flex-col gap-1">
-    @for (p of savedPipelines(); track p.id) {
-    <li>
-      <div
-        class="group flex items-center gap-2 rounded-[var(--r-sm)] border border-[var(--border)] px-3 py-2 hover:bg-[var(--surface-3)]"
-      >
+    @for (n of mm.nodes; track $index) {
+    <rect
+      [attr.x]="n.x"
+      [attr.y]="n.y"
+      [attr.width]="n.w"
+      [attr.height]="n.h"
+      rx="1.5"
+      [attr.fill]="n.fill"
+      [attr.fill-opacity]="n.selected ? 1 : 0.6"
+    ></rect>
+    }
+    <rect
+      class="fill-[var(--accent-quiet)] stroke-[var(--accent)] [stroke-width:1]"
+      [attr.x]="mm.view.x"
+      [attr.y]="mm.view.y"
+      [attr.width]="mm.view.w"
+      [attr.height]="mm.view.h"
+    ></rect>
+  </svg>
+  } @if (showLog() && run(); as r) {
+  <div
+    class="absolute left-1/2 -translate-x-1/2 bottom-3 z-[19] w-[420px] max-w-[70%] max-h-[38%] flex flex-col border border-[var(--border)] rounded-[var(--r-md)] bg-[var(--surface-2)] shadow-[var(--elev-2)]"
+    (pointerdown)="$event.stopPropagation()"
+    (wheel)="$event.stopPropagation()"
+  >
+    <header
+      class="flex items-center justify-between px-3 py-2 border-b border-[var(--border)]"
+    >
+      <span class="text-xs font-semibold text-text-2">
+        Run log · <span class="capitalize">{{ r.status }}</span>
+      </span>
+      <div class="flex items-center gap-1">
+        @if (logNodes().length) {
+        <select
+          class="h-6 max-w-[130px] px-1.5 text-[11px] rounded-[var(--r-sm)] border border-[var(--border)] bg-[var(--surface-1)] text-text-2"
+          aria-label="Filter log by node"
+          [value]="logFilter() ?? ''"
+          (change)="logFilter.set($any($event.target).value || null)"
+        >
+          <option value="">All nodes</option>
+          @for (n of logNodes(); track n.id) {
+          <option [value]="n.id">{{ n.title }}</option>
+          }
+        </select>
+        }
         <button
           type="button"
-          class="flex min-w-0 flex-1 flex-col items-start text-left cursor-pointer"
-          (click)="loadSaved(p.id)"
+          class="px-2 h-6 text-[11px] rounded-[var(--r-sm)] text-text-2 hover:bg-[var(--surface-3)]"
+          (click)="clearRun()"
         >
-          <span class="truncate text-sm font-medium text-text"
-            >{{ p.name }}</span
-          >
-          <span class="text-[11px] text-text-3">
-            {{ p.nodeCount }} node{{ p.nodeCount === 1 ? '' : 's' }} · {{
-            savedWhen(p.updatedAt) }}
-          </span>
+          Clear
         </button>
         <button
           type="button"
-          class="shrink-0 grid size-6 place-items-center rounded-[var(--r-sm)] text-text-3 opacity-0 transition-opacity hover:text-[var(--danger)] group-hover:opacity-100"
-          [attr.aria-label]="'Delete ' + p.name"
-          (click)="deleteSaved(p.id, $event)"
+          class="grid place-items-center w-6 h-6 text-text-2 rounded-[var(--r-sm)] hover:bg-[var(--surface-3)]"
+          aria-label="Hide log"
+          (click)="showLog.set(false)"
         >
           ✕
         </button>
       </div>
-    </li>
+    </header>
+    <div
+      #logScroll
+      class="flex-1 overflow-y-auto px-3 py-2 flex flex-col gap-0.5 font-mono text-[11px] text-text-2 select-text cursor-text"
+    >
+      @for (e of logEntries(); track $index) {
+      <div class="flex gap-2">
+        <span class="shrink-0 text-text-3 tabular-nums"
+          >{{ formatLogTime(e.at) }}</span
+        >
+        @if (e.node) {
+        <span class="shrink-0 text-[var(--accent)]">{{ e.node }}</span>
+        }
+        <span class="min-w-0">{{ e.message }}</span>
+      </div>
+      } @empty {
+      <div class="text-text-3">No log entries for this filter.</div>
+      }
+    </div>
+  </div>
+  } @if (menu(); as m) {
+  <div
+    class="absolute z-[20] min-w-[172px] p-1.5 flex flex-col gap-px border border-[var(--border)] rounded-[var(--r-md)] bg-[var(--surface-2)] shadow-[var(--elev-2)]"
+    role="menu"
+    [style.left.px]="m.x"
+    [style.top.px]="m.y"
+    (pointerdown)="$event.stopPropagation()"
+  >
+    @if (m.nodeId) {
+    <button
+      type="button"
+      role="menuitem"
+      [class]="cls.menuItem"
+      (click)="editNodeFromMenu()"
+    >
+      {{ readonly() ? 'Inspect node…' : 'Edit node…' }}
+    </button>
+    @if (!readonly()) {
+    <button
+      type="button"
+      role="menuitem"
+      [class]="cls.menuItemDanger"
+      (click)="deleteNode()"
+    >
+      Delete node
+    </button>
     }
-  </ul>
-  } @else {
-  <p class="text-sm text-text-3">No saved pipelines yet.</p>
+    <div [class]="cls.sep"></div>
+    <button
+      type="button"
+      role="menuitem"
+      [class]="cls.menuItem"
+      (click)="resetView()"
+    >
+      Reset view
+    </button>
+    } @else if (readonly()) {
+    <button
+      type="button"
+      role="menuitem"
+      [class]="cls.menuItem"
+      (click)="resetView()"
+    >
+      Reset view
+    </button>
+    } @else {
+    <div [class]="cls.menuLabel">Add node</div>
+    <button
+      type="button"
+      role="menuitem"
+      [class]="cls.menuItem"
+      (click)="addNode('trigger')"
+    >
+      Trigger
+    </button>
+    <button
+      type="button"
+      role="menuitem"
+      [class]="cls.menuItem"
+      (click)="addNode('action', 'integration')"
+    >
+      Integration
+    </button>
+    <button
+      type="button"
+      role="menuitem"
+      [class]="cls.menuItem"
+      (click)="addNode('action', 'transform')"
+    >
+      Transform
+    </button>
+    <button
+      type="button"
+      role="menuitem"
+      [class]="cls.menuItem"
+      (click)="addNode('action', 'control-flow')"
+    >
+      Control flow
+    </button>
+    <button
+      type="button"
+      role="menuitem"
+      [class]="cls.menuItem"
+      (click)="addNode('action', 'split')"
+    >
+      Split
+    </button>
+    <button
+      type="button"
+      role="menuitem"
+      [class]="cls.menuItem"
+      (click)="addNode('action', 'merge')"
+    >
+      Merge
+    </button>
+    <button
+      type="button"
+      role="menuitem"
+      [class]="cls.menuItem"
+      (click)="addNode('effect')"
+    >
+      Effect
+    </button>
+    <div [class]="cls.sep"></div>
+    <button
+      type="button"
+      role="menuitem"
+      [class]="cls.menuItem"
+      (click)="resetView()"
+    >
+      Reset view
+    </button>
+    }
+  </div>
+  } @if (inspectNode(); as n) {
+  <aside
+    class="absolute right-3 top-[54px] bottom-3 z-[19] w-[264px] flex flex-col gap-3 p-3.5 overflow-y-auto border border-[var(--border)] rounded-[var(--r-md)] bg-[var(--surface-2)] shadow-[var(--elev-2)]"
+    (pointerdown)="$event.stopPropagation()"
+    (wheel)="$event.stopPropagation()"
+  >
+    <header class="flex items-center justify-between">
+      <span
+        class="text-[0.6875rem] font-semibold tracking-[0.04em] uppercase text-[var(--accent)]"
+      >
+        {{ catalogLabel(n) }}
+      </span>
+      <button
+        type="button"
+        class="grid place-items-center w-6 h-6 text-text-2 rounded-[var(--r-sm)] cursor-pointer hover:text-text hover:bg-[var(--surface-3)]"
+        aria-label="Close inspector"
+        (click)="closeInspector()"
+      >
+        ✕
+      </button>
+    </header>
+
+    <label [class]="cls.field">
+      <span [class]="cls.fieldLabel">Title</span>
+      <input
+        [class]="cls.fieldInput"
+        type="text"
+        [value]="n.title"
+        [disabled]="readonly()"
+        (change)="patchTitle($any($event.target).value)"
+      />
+    </label>
+
+    <label [class]="cls.field">
+      <span [class]="cls.fieldLabel">Subtitle</span>
+      <input
+        [class]="cls.fieldInput"
+        type="text"
+        [value]="n.subtitle ?? ''"
+        [disabled]="readonly()"
+        (change)="patchSubtitle($any($event.target).value)"
+      />
+    </label>
+
+    @if (!isCf(n) && params(n).length) {
+    <div class="h-px bg-[var(--border)]"></div>
+    <span class="text-xs font-semibold text-text-2">Parameters</span>
+    @for (f of params(n); track f.key) { @switch (f.type) { @case ('boolean') {
+    <label class="flex flex-row items-center gap-2">
+      <input
+        type="checkbox"
+        [checked]="paramChecked(n, f.key)"
+        [disabled]="readonly()"
+        (change)="patchParam(f.key, $any($event.target).checked)"
+      />
+      <span [class]="cls.fieldLabel">{{ f.label }}</span>
+    </label>
+    } @case ('select') {
+    <label [class]="cls.field">
+      <span [class]="cls.fieldLabel">{{ f.label }}</span>
+      <select
+        [class]="cls.fieldInput"
+        [disabled]="readonly()"
+        (change)="patchParam(f.key, $any($event.target).value)"
+      >
+        <option value="" [selected]="!paramValue(n, f.key)">—</option>
+        @for (o of f.options; track o.value) {
+        <option [value]="o.value" [selected]="o.value === paramValue(n, f.key)">
+          {{ o.label }}
+        </option>
+        }
+      </select>
+    </label>
+    } @case ('textarea') {
+    <label [class]="cls.field">
+      <span [class]="cls.fieldLabel">{{ f.label }}</span>
+      <textarea
+        [class]="cls.fieldInput + ' font-mono min-h-[64px]'"
+        [placeholder]="f.placeholder ?? ''"
+        [value]="paramValue(n, f.key)"
+        [disabled]="readonly()"
+        (change)="patchParam(f.key, $any($event.target).value)"
+      ></textarea>
+    </label>
+    } @default {
+    <label [class]="cls.field">
+      <span [class]="cls.fieldLabel">{{ f.label }}</span>
+      <input
+        [class]="
+                  cls.fieldInput + (f.type === 'expression' ? ' font-mono' : '')
+                "
+        [type]="f.type === 'number' ? 'number' : 'text'"
+        [placeholder]="f.placeholder ?? ''"
+        [value]="paramValue(n, f.key)"
+        [disabled]="readonly()"
+        (change)="patchParam(f.key, $any($event.target).value)"
+      />
+      @if (f.type === 'expression') {
+      <span [class]="cls.hint">{{ exprSyntax.template }}</span>
+      } @if (f.type === 'expression' && context().length && !readonly()) {
+      <div class="flex flex-wrap gap-1">
+        @for (cn of context(); track cn.id) {
+        <button
+          type="button"
+          class="px-2 py-0.5 text-[11px] rounded-full border border-[var(--border)] text-text-2 cursor-pointer hover:bg-[var(--surface-3)]"
+          (click)="insertParamContext(f.key, cn)"
+        >
+          {{ cn.title }}
+        </button>
+        @for (p of varPaths(cn); track p) {
+        <button
+          type="button"
+          class="px-2 py-0.5 font-mono text-[11px] rounded-full border border-[var(--border)] text-[var(--accent)] cursor-pointer hover:bg-[var(--surface-3)]"
+          [title]="'Insert ' + cn.title + '.' + p"
+          (click)="insertParamContext(f.key, cn, p)"
+        >
+          .{{ p }}
+        </button>
+        } }
+      </div>
+      }
+    </label>
+    } } } } @if (n.kind === 'action' && n.category === 'merge') {
+    <label [class]="cls.field">
+      <span [class]="cls.fieldLabel">Buffer size</span>
+      <input
+        [class]="cls.fieldInput"
+        type="number"
+        min="1"
+        [value]="n.bufferSize ?? 1"
+        [disabled]="readonly()"
+        (change)="patchBuffer($any($event.target).value)"
+      />
+    </label>
+    } @if (n.kind === 'effect') {
+    <label class="flex flex-row items-center gap-2">
+      <input
+        type="checkbox"
+        [checked]="n.required !== false"
+        [disabled]="readonly()"
+        (change)="patchRequired($any($event.target).checked)"
+      />
+      <span [class]="cls.fieldLabel">Required (failure fails the run)</span>
+    </label>
+    } @if (isCf(n)) {
+    <div class="h-px bg-[var(--border)]"></div>
+
+    <div [class]="cls.field">
+      <span [class]="cls.fieldLabel">Control flow</span>
+      <div class="flex gap-1">
+        @for (t of cfTypes; track t) {
+        <button
+          type="button"
+          [class]="cfTypeClass(t)"
+          [disabled]="readonly()"
+          (click)="setControlFlowType(t)"
+        >
+          {{ t }}
+        </button>
+        }
+      </div>
+    </div>
+
+    @if (exprCfg(); as e) {
+    <label [class]="cls.field">
+      <span [class]="cls.fieldLabel"
+        >{{ e.type === 'filter' ? 'Keep when' : 'Condition' }}</span
+      >
+      <input
+        [class]="cls.fieldInput"
+        type="text"
+        placeholder="$json.count > 5"
+        [value]="e.expression"
+        [disabled]="readonly()"
+        (change)="patchExpression($any($event.target).value)"
+      />
+      <span [class]="cls.hint">{{ exprSyntax.condition }}</span>
+    </label>
+    } @if (switchCfg(); as sw) {
+    <label [class]="cls.field">
+      <span [class]="cls.fieldLabel">Discriminant</span>
+      <input
+        [class]="cls.fieldInput"
+        type="text"
+        placeholder="$json.source"
+        [value]="sw.discriminant"
+        [disabled]="readonly()"
+        (change)="patchDiscriminant($any($event.target).value)"
+      />
+      <span [class]="cls.hint">{{ exprSyntax.condition }}</span>
+    </label>
+
+    <div [class]="cls.field">
+      <span [class]="cls.fieldLabel">Cases → outputs</span>
+      <span [class]="cls.hint">
+        The <b>match value</b> is compared to the discriminant (routes here when
+        equal). The <b>label</b> only names the output port.
+      </span>
+      <div class="flex items-center gap-1">
+        <span [class]="cls.hint + ' flex-1'">Output label</span>
+        <span [class]="cls.hint + ' flex-1'">Match value (= discriminant)</span>
+        <span class="w-7 shrink-0"></span>
+      </div>
+      @for (c of sw.cases; track c.id) {
+      <div class="flex items-center gap-1">
+        <input
+          [class]="cls.fieldInput + ' flex-1'"
+          type="text"
+          placeholder="e.g. WhatsApp"
+          [value]="c.label"
+          [disabled]="readonly()"
+          (change)="patchCaseLabel(c.id, $any($event.target).value)"
+        />
+        <input
+          [class]="cls.fieldInput + ' flex-1 font-mono'"
+          type="text"
+          placeholder="e.g. whatsapp"
+          [value]="c.value"
+          [disabled]="readonly()"
+          (change)="patchCaseValue(c.id, $any($event.target).value)"
+        />
+        @if (!readonly()) {
+        <button
+          type="button"
+          class="shrink-0 grid place-items-center w-7 h-7 text-text-2 rounded-[var(--r-sm)] hover:text-[var(--danger)] hover:bg-[var(--danger-quiet)]"
+          aria-label="Remove case"
+          (click)="removeCase(c.id)"
+        >
+          ✕
+        </button>
+        }
+      </div>
+      } @if (!readonly()) {
+      <button
+        type="button"
+        class="mt-1 flex items-center justify-center px-2.5 py-[7px] text-[0.8125rem] text-text-2 rounded-[var(--r-sm)] border border-dashed border-[var(--border)] cursor-pointer hover:bg-[var(--surface-3)]"
+        (click)="addCase()"
+      >
+        + Add case
+      </button>
+      }
+    </div>
+
+    <label class="flex flex-row items-center gap-2">
+      <input
+        type="checkbox"
+        [checked]="sw.hasDefault"
+        [disabled]="readonly()"
+        (change)="toggleDefault($any($event.target).checked)"
+      />
+      <span [class]="cls.fieldLabel">Default branch</span>
+    </label>
+    } @if (context().length) {
+    <div [class]="cls.field">
+      <span [class]="cls.fieldLabel">Pipeline context</span>
+      <div class="flex flex-wrap gap-1">
+        @for (cn of context(); track cn.id) {
+        <button
+          type="button"
+          class="px-2 py-1 text-[11px] rounded-full border border-[var(--border)] text-text-2 cursor-pointer hover:bg-[var(--surface-3)] disabled:opacity-50"
+          [title]="'Insert a reference to ' + cn.title"
+          [disabled]="readonly()"
+          (click)="insertContext(cn)"
+        >
+          {{ cn.title }}
+        </button>
+        @for (p of varPaths(cn); track p) {
+        <button
+          type="button"
+          class="px-2 py-1 font-mono text-[11px] rounded-full border border-[var(--border)] text-[var(--accent)] cursor-pointer hover:bg-[var(--surface-3)] disabled:opacity-50"
+          [title]="'Insert ' + cn.title + '.' + p"
+          [disabled]="readonly()"
+          (click)="insertContext(cn, p)"
+        >
+          .{{ p }}
+        </button>
+        } }
+      </div>
+    </div>
+    } } @if (inspectedRun(); as ir) {
+    <div class="h-px bg-[var(--border)]"></div>
+    <span class="text-xs font-semibold text-text-2">
+      Run data · <span class="capitalize">{{ ir.status }}</span>
+    </span>
+    @if (ir.error) {
+    <div class="text-[11px] text-[var(--danger)]">{{ ir.error }}</div>
+    } @if (ir.output !== undefined) {
+    <pre
+      class="max-h-40 overflow-auto p-2 rounded-[var(--r-sm)] bg-[var(--surface-1)] border border-[var(--border)] font-mono text-[11px] text-text-2 whitespace-pre-wrap select-text cursor-text"
+    >
+{{ json(ir.output) }}</pre>
+    } }
+  </aside>
   }
-</tsai-dialog>
+
+  <!-- Delete confirmation -->
+  <tsai-dialog
+    [(open)]="confirmOpen"
+    size="sm"
+    title="Delete?"
+    (closed)="cancelDelete()"
+  >
+    {{ confirmMessage() }}
+    <ng-container dialog-footer>
+      <tsai-button variant="ghost" (click)="cancelDelete()">Cancel</tsai-button>
+      <tsai-button variant="danger" (click)="confirmDelete()"
+        >Delete</tsai-button
+      >
+    </ng-container>
+  </tsai-dialog>
+
+  <!-- Open saved pipeline -->
+  <tsai-dialog [(open)]="showOpen" size="sm" title="Open pipeline">
+    @if (savedPipelines().length) {
+    <ul class="flex flex-col gap-1">
+      @for (p of savedPipelines(); track p.id) {
+      <li>
+        <div
+          class="group flex items-center gap-2 rounded-[var(--r-sm)] border border-[var(--border)] px-3 py-2 hover:bg-[var(--surface-3)]"
+        >
+          <button
+            type="button"
+            class="flex min-w-0 flex-1 flex-col items-start text-left cursor-pointer"
+            (click)="loadSaved(p.id)"
+          >
+            <span class="truncate text-sm font-medium text-text"
+              >{{ p.name }}</span
+            >
+            <span class="text-[11px] text-text-3">
+              {{ p.nodeCount }} node{{ p.nodeCount === 1 ? '' : 's' }} · {{
+              savedWhen(p.updatedAt) }}
+            </span>
+          </button>
+          <button
+            type="button"
+            class="shrink-0 grid size-6 place-items-center rounded-[var(--r-sm)] text-text-3 opacity-0 transition-opacity hover:text-[var(--danger)] group-hover:opacity-100"
+            [attr.aria-label]="'Delete ' + p.name"
+            (click)="deleteSaved(p.id, $event)"
+          >
+            ✕
+          </button>
+        </div>
+      </li>
+      }
+    </ul>
+    } @else {
+    <p class="text-sm text-text-3">No saved pipelines yet.</p>
+    }
+  </tsai-dialog>
+</div>
