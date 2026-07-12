@@ -21,7 +21,6 @@ function node(spec: Omit<BoardNode, 'ports'>): BoardNode {
 }
 
 const SIZE = { cols: 8, rows: 2 } as const;
-const DEMO_STORAGE_REVISION = 'split-mode-modal-gallery-v3';
 const TELEGRAM_PROMPT = 'Draw 10 cats and 20 elephants';
 const TELEGRAM_MEDIA_COMMANDS = [
   ...Array.from({ length: 10 }, (_, index) => ({
@@ -370,7 +369,7 @@ const CAT_PIPELINE: Pipeline = {
 
 const BOARD_STORAGE = new LocalStoragePipelineStore(
   browserStorage(),
-  `tsai-pe:board-playground:${playgroundBuildCommit()}:${DEMO_STORAGE_REVISION}`,
+  `tsai-pe:board-playground:${playgroundBuildCommit()}`,
 );
 BOARD_STORAGE.seed(CAT_PIPELINE);
 const DEMO_BACKEND = new TestBackendSystem({
