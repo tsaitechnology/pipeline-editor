@@ -125,7 +125,7 @@ describe('TestBackendSystem — happy path', () => {
     expect(snap.nodes['a'].output).toBeDefined();
   });
 
-  it('fans in multiple triggers — one fires, converging node still runs', async () => {
+  it('plays multiple triggers sequentially in one run', async () => {
     const p = pipeline(
       [
         trigger('telegram'),
@@ -139,13 +139,36 @@ describe('TestBackendSystem — happy path', () => {
         edge('handle', 'reply'),
       ],
     );
-    // Round-robin firing picks the first trigger on a fresh instance.
     const snap = await runToEnd(fast(), p);
     expect(snap.status).toBe('success');
     expect(snap.nodes['telegram'].status).toBe('success');
-    expect(snap.nodes['slack'].status).toBe('skipped'); // not the firing trigger
-    expect(snap.nodes['handle'].status).toBe('success'); // fan-in still delivers
+    expect(snap.nodes['slack'].status).toBe('success');
+    expect(snap.nodes['handle'].status).toBe('success');
     expect(snap.nodes['reply'].status).toBe('success');
+    expect(snap.log.map((entry) => entry.message)).toEqual(
+      expect.arrayContaining([
+        'Trigger 1/2: "telegram".',
+        'Trigger 2/2: "slack".',
+      ]),
+    );
+  });
+
+  it('can force a single trigger, preserving the previous one-event behavior', async () => {
+    const p = pipeline(
+      [trigger('telegram'), trigger('slack'), action('handle')],
+      [edge('telegram', 'handle'), edge('slack', 'handle')],
+    );
+    const snap = await runToEnd(
+      new TestBackendSystem({ stepDelayMs: 0, firingTrigger: 'telegram' }),
+      p,
+    );
+    expect(snap.status).toBe('success');
+    expect(snap.nodes['telegram'].status).toBe('success');
+    expect(snap.nodes['slack'].status).toBe('skipped');
+    expect(snap.nodes['handle'].status).toBe('success');
+    expect(snap.log.some((entry) => /Trigger 1\/1/.test(entry.message))).toBe(
+      true,
+    );
   });
 
   it("emits a typed trigger's catalog message shape as its output", async () => {
@@ -309,10 +332,12 @@ describe('TestBackendSystem — smart evaluation', () => {
         edge('sw', 'replyWa', 'case-wa'),
       ],
     );
-    // Fresh instance → round-robin fires the first trigger (telegram).
-    const snap = await runToEnd(fast(), p);
+    const snap = await runToEnd(
+      new TestBackendSystem({ stepDelayMs: 0, firingTrigger: 'telegram' }),
+      p,
+    );
     expect(snap.status).toBe('success');
-    expect(snap.nodes['whatsapp'].status).toBe('skipped'); // didn't fire this run
+    expect(snap.nodes['whatsapp'].status).toBe('skipped'); // forced out this run
     expect(snap.nodes['replyTg'].status).toBe('success');
     expect(snap.nodes['replyWa'].status).toBe('skipped');
   });

@@ -44,10 +44,14 @@ interface RunState {
   /** For control-flow nodes: the output port id the branch resolved to. */
   selected: Record<string, string>;
   /**
-   * Which trigger "fired" this run (one event enters from one channel). Other
-   * triggers are skipped, so downstream routing reflects the firing source.
+   * Which trigger is currently playing. A run may process several triggers
+   * sequentially; this is the active queue item.
    */
   firingTriggerId?: string;
+  /** Ordered trigger queue for this run. Empty means a triggerless one-pass run. */
+  triggerIds: string[];
+  /** Current index in `triggerIds`, or 0 for a triggerless one-pass run. */
+  triggerIndex: number;
   /**
    * Fan-out factor a node *emits* downstream: split multiplies it by the item
    * count, merge collapses it back to 1, everything else passes it through. A
@@ -76,11 +80,11 @@ export interface TestBackendOptions {
    */
   tickProgressMs?: number;
   /**
-   * Which trigger fires this run. A pipeline may have several triggers, but one
-   * event enters from one channel; the rest are skipped. By id, or a picker given
-   * the trigger nodes + run index (default: round-robin across runs).
+   * Force exactly one trigger to fire. By id, or a picker given the trigger
+   * nodes + run index. When omitted, a run plays all triggers sequentially.
    */
-  firingTrigger?: string | ((triggers: BoardNode[], runIndex: number) => string);
+  firingTrigger?:
+    string | ((triggers: BoardNode[], runIndex: number) => string);
 }
 
 /**
@@ -105,9 +109,7 @@ export class TestBackendSystem implements PipelineBackend {
   private readonly now: () => number;
   private readonly tickProgressMs: number;
   private readonly firingTrigger:
-    | string
-    | ((triggers: BoardNode[], runIndex: number) => string)
-    | undefined;
+    string | ((triggers: BoardNode[], runIndex: number) => string) | undefined;
 
   constructor(options: TestBackendOptions = {}) {
     this.stepDelayMs = options.stepDelayMs ?? 400;
@@ -117,18 +119,15 @@ export class TestBackendSystem implements PipelineBackend {
     this.firingTrigger = options.firingTrigger;
   }
 
-  /** Choose which trigger fires this run (see {@link TestBackendOptions.firingTrigger}). */
-  private pickFiringTrigger(
-    pipeline: Pipeline,
-    runIndex: number,
-  ): string | undefined {
+  /** Build the trigger queue for this run (see {@link TestBackendOptions.firingTrigger}). */
+  private triggerQueue(pipeline: Pipeline, runIndex: number): string[] {
     const triggers = pipeline.nodes.filter((n) => n.kind === 'trigger');
-    if (!triggers.length) return undefined;
-    if (typeof this.firingTrigger === 'string') return this.firingTrigger;
+    if (!triggers.length) return [];
+    if (typeof this.firingTrigger === 'string') return [this.firingTrigger];
     if (typeof this.firingTrigger === 'function') {
-      return this.firingTrigger(triggers, runIndex);
+      return [this.firingTrigger(triggers, runIndex)];
     }
-    return triggers[runIndex % triggers.length].id; // round-robin by run
+    return triggers.map((trigger) => trigger.id);
   }
 
   startRun(pipeline: Pipeline): string {
@@ -149,13 +148,12 @@ export class TestBackendSystem implements PipelineBackend {
       outputs: {},
       selected: {},
       outFan: {},
-      firingTriggerId: this.pickFiringTrigger(pipeline, this.seq - 1),
+      triggerIds: this.triggerQueue(pipeline, this.seq - 1),
+      triggerIndex: 0,
     };
     this.runs.set(runId, run);
 
     this.log(run, `Run ${runId} accepted for "${pipeline.name}".`);
-    const firing = pipeline.nodes.find((n) => n.id === run.firingTriggerId);
-    if (firing) this.log(run, `Firing trigger: "${firing.title}".`, firing.id);
 
     const order = this.topoOrder(pipeline);
     if (order === null) {
@@ -174,7 +172,7 @@ export class TestBackendSystem implements PipelineBackend {
       run.status = 'running';
       this.log(run, 'Run started.');
       this.emit(run);
-      this.runNextNode(run, pipeline, order, 0);
+      this.startTriggerPass(run, pipeline, order, 0);
     });
 
     return runId;
@@ -212,6 +210,44 @@ export class TestBackendSystem implements PipelineBackend {
 
   // --- simulation -----------------------------------------------------------
 
+  private startTriggerPass(
+    run: RunState,
+    pipeline: Pipeline,
+    order: BoardNode[],
+    triggerIndex: number,
+  ): void {
+    if (run.canceled) return;
+    run.triggerIndex = triggerIndex;
+    run.firingTriggerId = run.triggerIds[triggerIndex];
+    this.resetPassState(run, pipeline);
+
+    const total = run.triggerIds.length;
+    const firing = pipeline.nodes.find((n) => n.id === run.firingTriggerId);
+    if (firing) {
+      this.log(
+        run,
+        `Trigger ${triggerIndex + 1}/${total}: "${firing.title}".`,
+        firing.id,
+      );
+    }
+    this.emit(run);
+    this.runNextNode(run, pipeline, order, 0);
+  }
+
+  private resetPassState(run: RunState, pipeline: Pipeline): void {
+    run.outputs = {};
+    run.selected = {};
+    run.outFan = {};
+    for (const node of pipeline.nodes) {
+      if (node.kind === 'trigger' && node.id !== run.firingTriggerId) continue;
+      const nodeRun = run.nodes[node.id];
+      nodeRun.status = 'idle';
+      delete nodeRun.error;
+      delete nodeRun.progress;
+      delete nodeRun.output;
+    }
+  }
+
   private runNextNode(
     run: RunState,
     pipeline: Pipeline,
@@ -221,6 +257,11 @@ export class TestBackendSystem implements PipelineBackend {
     if (run.canceled) return;
 
     if (index >= order.length) {
+      const nextTrigger = run.triggerIndex + 1;
+      if (nextTrigger < run.triggerIds.length) {
+        this.startTriggerPass(run, pipeline, order, nextTrigger);
+        return;
+      }
       this.finish(run, 'success');
       return;
     }
@@ -231,9 +272,15 @@ export class TestBackendSystem implements PipelineBackend {
     // Run a node only if it is a root, or an upstream node succeeded along a
     // *taken* branch (control-flow routes only through its selected output).
     if (!this.isReachable(run, pipeline, node)) {
-      nodeRun.status = 'skipped';
-      this.log(run, `"${node.title}" not on the taken path — skipped.`, node.id);
-      this.emit(run);
+      if (!(node.kind === 'trigger' && nodeRun.status === 'success')) {
+        nodeRun.status = 'skipped';
+        this.log(
+          run,
+          `"${node.title}" not on the taken path — skipped.`,
+          node.id,
+        );
+        this.emit(run);
+      }
       this.runNextNode(run, pipeline, order, index + 1);
       return;
     }
@@ -368,6 +415,7 @@ export class TestBackendSystem implements PipelineBackend {
   /** Whether an edge is "live": its source succeeded on a taken branch. */
   private edgeActive(run: RunState, edge: Edge): boolean {
     if (run.nodes[edge.source.nodeId]?.status !== 'success') return false;
+    if (!(edge.source.nodeId in run.outputs)) return false;
     const selected = run.selected[edge.source.nodeId];
     // Non-branching source: always taken. Branching: only the selected port.
     return selected === undefined || edge.source.portId === selected;
@@ -377,12 +425,18 @@ export class TestBackendSystem implements PipelineBackend {
    * Evaluate a control-flow node's condition against context and pick the branch
    * it actually routes to (may throw on a bad reference → the node fails).
    */
-  private resolveBranch(run: RunState, node: BoardNode, ctx: EvalContext): void {
+  private resolveBranch(
+    run: RunState,
+    node: BoardNode,
+    ctx: EvalContext,
+  ): void {
     if (!isControlFlow(node) || !node.config) return;
     const config = node.config;
     let portId: string;
     if (config.type === 'if') {
-      portId = truthy(coerceExpression(config.expression, ctx)) ? 'true' : 'false';
+      portId = truthy(coerceExpression(config.expression, ctx))
+        ? 'true'
+        : 'false';
     } else if (config.type === 'filter') {
       portId = truthy(coerceExpression(config.expression, ctx))
         ? 'pass'
@@ -521,9 +575,7 @@ export class TestBackendSystem implements PipelineBackend {
       (o): o is Record<string, unknown> =>
         !!o && typeof o === 'object' && !Array.isArray(o),
     );
-    const json = objects.length
-      ? Object.assign({}, ...objects)
-      : inputs[0];
+    const json = objects.length ? Object.assign({}, ...objects) : inputs[0];
     return {
       json,
       node: (title) => {
