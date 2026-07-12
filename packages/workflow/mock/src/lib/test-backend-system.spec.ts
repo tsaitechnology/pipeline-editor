@@ -1117,41 +1117,68 @@ describe('TestBackendSystem — split/merge fan-out', () => {
 });
 
 describe('TestBackendSystem — fan-out waves', () => {
-  it('processes a fan-out node as running waves, succeeding only at N/N', async () => {
+  it('ticks split, worker and merge together, releasing downstream only at N/N', async () => {
     const sys = new TestBackendSystem({ stepDelayMs: 0, tickProgressMs: 1 });
     const p = pipeline(
       [
         trigger('t'),
         action('split', 'split'),
-        action('img'),
+        {
+          ...action('img', 'integration'),
+          type: 'image-gen',
+          data: { prompt: '{{ $json }}' },
+        },
         action('merge', 'merge'),
+        effect('done'),
       ],
-      [edge('t', 'split'), edge('split', 'img'), edge('img', 'merge')],
+      [
+        edge('t', 'split'),
+        edge('split', 'img'),
+        edge('img', 'merge'),
+        edge('merge', 'done'),
+      ],
     );
-    const states: { status: string; done?: number }[] = [];
+    const states: {
+      split?: number;
+      img?: number;
+      merge?: number;
+      doneStatus?: string;
+    }[] = [];
     await new Promise<void>((resolve) => {
       let unsub: () => void = () => undefined;
       const id = sys.startRun(p);
       unsub = sys.observe(id, (s) => {
-        const nr = s.nodes['img'];
-        if (nr) states.push({ status: nr.status, done: nr.progress?.done });
+        states.push({
+          split: s.nodes['split']?.progress?.done,
+          img: s.nodes['img']?.progress?.done,
+          merge: s.nodes['merge']?.progress?.done,
+          doneStatus: s.nodes['done']?.status,
+        });
         if (s.status === 'success' || s.status === 'error') {
           unsub();
           resolve();
         }
       });
     });
-    // still "running" while the wave counter climbs through the middle
+    expect(
+      states.some((s) => s.split === 0 && s.img === 0 && s.merge === 0),
+    ).toBe(true);
+    expect(
+      states.some((s) => s.split === 1 && s.img === 1 && s.merge === 1),
+    ).toBe(true);
+    expect(
+      states.some((s) => s.split === 2 && s.img === 2 && s.merge === 2),
+    ).toBe(true);
+    expect(
+      states.some((s) => s.split === 10 && s.img === 10 && s.merge === 10),
+    ).toBe(true);
     expect(
       states.some(
         (s) =>
-          s.status === 'running' && (s.done ?? 0) >= 1 && (s.done ?? 0) < 10,
+          (s.merge ?? 0) > 0 && (s.merge ?? 0) < 10 && s.doneStatus === 'idle',
       ),
     ).toBe(true);
-    // reaches success only at the final count
-    const done = states.filter((s) => s.status === 'success');
-    expect(done.length).toBeGreaterThan(0);
-    expect(done.every((s) => s.done === 10)).toBe(true);
+    expect(states.at(-1)?.doneStatus).toBe('success');
   });
 });
 

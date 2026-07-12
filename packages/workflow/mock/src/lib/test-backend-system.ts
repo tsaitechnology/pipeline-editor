@@ -414,6 +414,21 @@ export class TestBackendSystem implements PipelineBackend {
       try {
         const ctx = this.evalContext(run, pipeline, node);
         if (isControlFlow(node)) this.resolveBranch(run, node, ctx);
+        if (node.category === 'split') {
+          const segment = this.fanSegment(pipeline, order, index);
+          if (segment) {
+            this.runFanSegment(
+              run,
+              pipeline,
+              order,
+              index,
+              segment,
+              nodeRun,
+              ctx,
+            );
+            return;
+          }
+        }
         const output = this.produceOutput(run, pipeline, node, nodeRun, ctx);
 
         // Fan-in nodes actually process their items as waves: stay `running`
@@ -518,6 +533,214 @@ export class TestBackendSystem implements PipelineBackend {
       return;
     }
     this.succeed(run, pipeline, order, index, nodeRun, output);
+  }
+
+  private runFanSegment(
+    run: RunState,
+    pipeline: Pipeline,
+    order: BoardNode[],
+    splitIndex: number,
+    segment: { nodes: BoardNode[]; merge: BoardNode; endIndex: number },
+    splitRun: NodeRun,
+    splitCtx: EvalContext,
+  ): void {
+    const split = order[splitIndex];
+    const producedItems = this.splitItems(
+      split,
+      splitCtx,
+      this.countFrom([], split),
+    );
+    const expected = this.mergeExpectedCount(
+      segment.merge,
+      this.evalContextForJson(run, pipeline, {}),
+      producedItems.length,
+      producedItems.length,
+    );
+    if (producedItems.length < expected) {
+      throw new Error(
+        `Split produced ${producedItems.length} items, merge expected ${expected}`,
+      );
+    }
+    const items = producedItems.slice(0, expected);
+    const total = expected;
+    const splitOutput = { items, count: total };
+    run.outputs[split.id] = splitOutput;
+    run.outFan[split.id] = total;
+    run.fanItems[split.id] = items;
+    splitRun.output = splitOutput;
+    splitRun.progress = { done: 0, total };
+
+    for (const node of [...segment.nodes, segment.merge]) {
+      const nr = run.nodes[node.id];
+      nr.status = 'running';
+      nr.progress = { done: 0, total };
+      delete nr.error;
+      delete nr.output;
+      this.log(run, `Running "${node.title}".`, node.id);
+    }
+    this.log(run, `Split → fan-out ×${total}`, split.id);
+    this.emit(run);
+
+    const batch: unknown[] = [];
+    const step = (itemIndex: number): void => {
+      if (run.canceled) return;
+      if (itemIndex >= total) {
+        splitRun.status = 'success';
+        this.recordPassOutput(run, split.id, splitOutput);
+        for (const node of segment.nodes) {
+          const nr = run.nodes[node.id];
+          nr.status = 'success';
+          nr.output = run.outputs[node.id];
+          nr.progress = { done: total, total };
+          this.recordPassOutput(run, node.id, nr.output);
+        }
+        const mergeRun = run.nodes[segment.merge.id];
+        const mergeOutput = { batch, count: batch.length };
+        mergeRun.status = 'success';
+        mergeRun.progress = { done: total, total };
+        mergeRun.output = mergeOutput;
+        run.outputs[segment.merge.id] = mergeOutput;
+        run.outFan[segment.merge.id] = 1;
+        run.fanItems[segment.merge.id] = batch;
+        this.recordPassOutput(run, segment.merge.id, mergeOutput);
+        this.log(
+          run,
+          `Merge buffered ${total}/${total} → 1 batch`,
+          segment.merge.id,
+        );
+        this.emit(run);
+        this.runNextNode(run, pipeline, order, segment.endIndex + 1);
+        return;
+      }
+
+      this.schedule(run, this.tickProgressMs || this.stepDelayMs, () => {
+        splitRun.progress = { done: itemIndex + 1, total };
+        let item: unknown = items[itemIndex];
+        for (const node of segment.nodes) {
+          const nr = run.nodes[node.id];
+          const output = this.produceFanItemOutput(
+            run,
+            pipeline,
+            node,
+            item,
+            itemIndex,
+          );
+          const accumulated = this.accumulateFanOutput(
+            run.outputs[node.id],
+            output,
+          );
+          run.outputs[node.id] = accumulated;
+          run.fanItems[node.id] = this.outputFanItems(accumulated);
+          run.outFan[node.id] = total;
+          nr.output = accumulated;
+          nr.progress = { done: itemIndex + 1, total };
+          item = output;
+        }
+        batch.push(item);
+        const mergeRun = run.nodes[segment.merge.id];
+        mergeRun.output = { batch: [...batch], count: batch.length };
+        mergeRun.progress = { done: itemIndex + 1, total };
+        this.emit(run);
+        step(itemIndex + 1);
+      });
+    };
+    step(0);
+  }
+
+  private fanSegment(
+    pipeline: Pipeline,
+    order: BoardNode[],
+    splitIndex: number,
+  ): { nodes: BoardNode[]; merge: BoardNode; endIndex: number } | null {
+    const split = order[splitIndex];
+    if (split.category !== 'split') return null;
+    const nodes: BoardNode[] = [];
+    let current = split;
+    const seen = new Set<string>([split.id]);
+    for (;;) {
+      const outgoing = pipeline.edges.filter(
+        (e) => e.source.nodeId === current.id,
+      );
+      if (outgoing.length !== 1) return null;
+      const next = pipeline.nodes.find(
+        (n) => n.id === outgoing[0]?.target.nodeId,
+      );
+      if (!next || seen.has(next.id)) return null;
+      seen.add(next.id);
+      const nextIndex = order.findIndex((n) => n.id === next.id);
+      if (nextIndex <= splitIndex) return null;
+      if (next.category === 'merge') {
+        return { nodes, merge: next, endIndex: nextIndex };
+      }
+      nodes.push(next);
+      current = next;
+    }
+  }
+
+  private produceFanItemOutput(
+    run: RunState,
+    pipeline: Pipeline,
+    node: BoardNode,
+    item: unknown,
+    index: number,
+  ): unknown {
+    const ctx = this.evalContextForJson(run, pipeline, item);
+    if (node.kind === 'effect') return this.effectOutput(node, ctx);
+    if (node.category === 'integration') {
+      if (node.type === 'image-gen') {
+        const output = this.imageOutput(node, ctx, [item]);
+        const images = (output as Record<string, unknown>)['images'];
+        return Array.isArray(images) ? images[0] : output;
+      }
+      return this.integrationOutput(node, ctx, [item]);
+    }
+    if (node.category === 'transform') return this.transformOutput(node, ctx);
+    return item ?? { index };
+  }
+
+  private accumulateFanOutput(existing: unknown, item: unknown): unknown {
+    const previous =
+      existing && typeof existing === 'object'
+        ? (existing as Record<string, unknown>)
+        : {};
+    if (item && typeof item === 'object' && 'imageUrl' in item) {
+      const images = Array.isArray(previous['images'])
+        ? previous['images']
+        : [];
+      return {
+        ...previous,
+        prompt: (item as Record<string, unknown>)['prompt'],
+        imageUrl: (item as Record<string, unknown>)['imageUrl'],
+        images: [...images, item],
+        count: images.length + 1,
+      };
+    }
+    const items = Array.isArray(previous['items']) ? previous['items'] : [];
+    return { ...previous, items: [...items, item], count: items.length + 1 };
+  }
+
+  private outputFanItems(output: unknown): unknown[] {
+    if (!output || typeof output !== 'object') return [];
+    const rec = output as Record<string, unknown>;
+    if (Array.isArray(rec['images'])) return rec['images'];
+    if (Array.isArray(rec['items'])) return rec['items'];
+    if (Array.isArray(rec['batch'])) return rec['batch'];
+    return [];
+  }
+
+  private evalContextForJson(
+    run: RunState,
+    pipeline: Pipeline,
+    json: unknown,
+  ): EvalContext {
+    return {
+      json,
+      trigger: run.trigger,
+      node: (title) => {
+        const found = pipeline.nodes.find((n) => n.title === title);
+        return found ? run.outputs[found.id] : undefined;
+      },
+    };
   }
 
   /** Commit a node's success + output, then run the next node. */
