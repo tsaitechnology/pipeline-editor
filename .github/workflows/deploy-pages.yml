@@ -1,4 +1,4 @@
-name: Deploy Playground to Pages
+name: Deploy Docs and Playground to Pages
 
 on:
   push:
@@ -18,8 +18,8 @@ concurrency:
 
 env:
   # Project Pages live under /<repo>/ — must match `<base href>` for routing/assets.
-  # When docs land, keep the playground here and add them under /docs.
   BASE_HREF: /pipeline-editor/
+  DOCS_BASE_HREF: /pipeline-editor/docs/
   NX_NO_CLOUD: 'true'
 
 jobs:
@@ -38,13 +38,21 @@ jobs:
       - name: Build playground
         run: npx nx build playground --base-href="$BASE_HREF"
 
-      - name: SPA fallback + disable Jekyll
-        # GitHub Pages serves 404.html for unknown paths; the SPA boots and the
-        # Angular router takes over — so deep links like /board work.
+      - name: Build docs
+        run: npx nx build docs --base-href="$DOCS_BASE_HREF"
+
+      - name: Compose Pages artifact
+        # Keep the playground at /pipeline-editor/ and publish docs at
+        # /pipeline-editor/docs/. GitHub Pages serves 404.html for unknown
+        # playground paths; the Angular router then takes over for /board.
         run: |
-          cd dist/apps/playground/browser
-          cp index.html 404.html
-          touch .nojekyll
+          rm -rf dist/pages
+          mkdir -p dist/pages
+          cp -R dist/apps/playground/browser/. dist/pages/
+          mkdir -p dist/pages/docs
+          cp -R dist/apps/docs/browser/. dist/pages/docs/
+          cp dist/pages/index.html dist/pages/404.html
+          touch dist/pages/.nojekyll
 
       # `enablement: true` turns Pages on via the API (if the repo allows it), so
       # no manual "Settings → Pages" step is needed on first run.
@@ -54,7 +62,7 @@ jobs:
 
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist/apps/playground/browser
+          path: dist/pages
 
   deploy:
     needs: build

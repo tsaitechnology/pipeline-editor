@@ -2,8 +2,9 @@
 
 > An embeddable Angular editor for visual AI-agent pipelines.
 
-**🔗 [Live demo](https://tsai-tech.github.io/pipeline-editor/board)** — build a
-pipeline, wire it up, and run it in your browser.
+**🔗 [Live demo](https://tsai-tech.github.io/pipeline-editor/board)** ·
+**[Documentation](https://tsai-tech.github.io/pipeline-editor/docs/)** — build a
+pipeline, wire it up, and learn how to embed the components in your app.
 
 A canvas where a pipeline is assembled from nodes (**trigger → action → effect**,
 plus if/switch/filter control-flow and split/merge buffers): nodes connect with

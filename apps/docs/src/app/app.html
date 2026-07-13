@@ -1,0 +1,254 @@
+<main class="min-h-screen bg-bg text-text">
+  <header
+    class="sticky top-0 z-30 border-b border-border bg-bg/92 backdrop-blur"
+  >
+    <div class="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3 sm:px-6">
+      <a class="min-w-0 flex-1 text-sm font-semibold text-text" href="#start">
+        Pipeline Editor
+      </a>
+      <nav class="hidden items-center gap-1 lg:flex" aria-label="Docs">
+        @for (item of nav; track item.id) {
+        <button
+          type="button"
+          class="rounded-sm px-2.5 py-1.5 text-sm text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
+          [ngClass]="{ 'bg-surface-2 text-text': active() === item.id }"
+          (click)="go(item.id)"
+        >
+          {{ item.label }}
+        </button>
+        }
+      </nav>
+      <a
+        class="rounded-sm border border-border bg-surface-2 px-3 py-1.5 text-sm text-text transition-colors hover:bg-surface-3"
+        href="../board"
+      >
+        Playground
+      </a>
+      <tsai-button variant="ghost" size="sm" (click)="toggleTheme()">
+        {{ isLight() ? 'Dark' : 'Light' }}
+      </tsai-button>
+    </div>
+  </header>
+
+  <section
+    id="start"
+    class="mx-auto grid min-h-[calc(100vh-58px)] max-w-7xl scroll-mt-20 gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(560px,1.1fr)] lg:items-center"
+  >
+    <div class="flex flex-col gap-6">
+      <div class="flex flex-wrap gap-2">
+        <tsai-badge variant="accent">Angular 21</tsai-badge>
+        <tsai-badge variant="trigger">Signals</tsai-badge>
+        <tsai-badge variant="result">Tailwind v4</tsai-badge>
+      </div>
+      <div class="space-y-4">
+        <h1 class="max-w-3xl text-4xl font-semibold leading-tight sm:text-6xl">
+          Visual pipeline editor for product-grade workflow builders.
+        </h1>
+        <p class="max-w-2xl text-base leading-7 text-text-2 sm:text-lg">
+          Publishable Angular components for building n8n-style editors inside
+          your own app: canvas, nodes, parameter inspector, validation, run
+          telemetry, persistence and a backend-neutral execution port.
+        </p>
+      </div>
+      <div class="flex flex-wrap gap-3">
+        <a
+          class="inline-flex h-9 items-center rounded-sm bg-accent px-4 text-sm font-medium text-accent-fg transition-colors hover:bg-accent-hover"
+          href="#install"
+          (click)="go('install')"
+        >
+          Install
+        </a>
+        <a
+          class="inline-flex h-9 items-center rounded-sm border border-border bg-surface-2 px-4 text-sm font-medium text-text transition-colors hover:bg-surface-3"
+          href="../board"
+        >
+          Open playground
+        </a>
+      </div>
+    </div>
+
+    <div
+      class="h-[520px] min-h-0 overflow-hidden rounded-lg border border-border bg-canvas shadow-elev-2"
+    >
+      <pe-board
+        [pipeline]="pipeline()"
+        [readonly]="true"
+        class="block h-full"
+      />
+    </div>
+  </section>
+
+  <div
+    class="mx-auto grid max-w-7xl gap-10 px-4 pb-20 sm:px-6 lg:grid-cols-[220px_minmax(0,1fr)]"
+  >
+    <aside class="hidden lg:block">
+      <div class="sticky top-24 flex flex-col gap-1">
+        @for (item of nav; track item.id) {
+        <button
+          type="button"
+          class="rounded-sm px-3 py-2 text-left text-sm text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
+          [ngClass]="{ 'bg-surface-2 text-text': active() === item.id }"
+          (click)="go(item.id)"
+        >
+          {{ item.label }}
+        </button>
+        }
+      </div>
+    </aside>
+
+    <div class="flex min-w-0 flex-col gap-16">
+      <section id="install" class="doc-section">
+        <div class="doc-heading">
+          <span>01</span>
+          <h2>Install the public packages</h2>
+        </div>
+        <p class="doc-copy">
+          The main editor is `@tsai-pe/board`. Add the UI kit, design tokens,
+          data contracts and node registry because host applications provide
+          their own catalog, store and backend implementation.
+        </p>
+        <pre><code>{{ installSnippet }}</code></pre>
+        <pre><code>{{ stylesSnippet }}</code></pre>
+        <tsai-table [columns]="packageColumns" [rows]="packages" />
+      </section>
+
+      <section id="board" class="doc-section">
+        <div class="doc-heading">
+          <span>02</span>
+          <h2>Mount the editor</h2>
+        </div>
+        <p class="doc-copy">
+          `pe-board` receives a serializable `Pipeline`. Runtime capabilities
+          are injected: catalog for palette/forms/ports, store for save/open and
+          backend for run/observe/stop. Omit store or backend to hide those
+          controls in read-only or design-only contexts.
+        </p>
+        <pre><code>{{ boardSnippet }}</code></pre>
+        <tsai-alert variant="info" title="Inputs and tokens">
+          Pass `[pipeline]` to load a document and `[readonly]="true"` to
+          disable editing. Provide `PIPELINE_NODE_CATALOG`, `PIPELINE_STORE` and
+          `PIPELINE_BACKEND` at the host component or route level.
+        </tsai-alert>
+      </section>
+
+      <section id="catalog" class="doc-section">
+        <div class="doc-heading">
+          <span>03</span>
+          <h2>Describe your node catalog</h2>
+        </div>
+        <p class="doc-copy">
+          The editor does not hard-code integrations. Each node type declares
+          its params, ports and output example. Those fields drive palette
+          groups, inspector forms, dynamic switch outputs and expression help.
+        </p>
+        <pre><code>{{ catalogSnippet }}</code></pre>
+        <div class="grid gap-4 md:grid-cols-3">
+          <tsai-card>
+            <h3 class="mb-2 text-sm font-semibold text-text">Params</h3>
+            <p class="text-sm leading-6 text-text-2">
+              Use `text`, `number`, `select`, `expression`, `json`, `array`,
+              `secret`, `credential`, `code` and resource picker fields.
+            </p>
+          </tsai-card>
+          <tsai-card>
+            <h3 class="mb-2 text-sm font-semibold text-text">Ports</h3>
+            <p class="text-sm leading-6 text-text-2">
+              Static, conditional and dynamic ports let nodes model branches,
+              switch cases, split/merge flows and effect-only leaves.
+            </p>
+          </tsai-card>
+          <tsai-card>
+            <h3 class="mb-2 text-sm font-semibold text-text">Context</h3>
+            <p class="text-sm leading-6 text-text-2">
+              `outputExample` powers `$json`, `$trigger` and `$node["Title"]`
+              suggestions in expression-capable inputs.
+            </p>
+          </tsai-card>
+        </div>
+      </section>
+
+      <section id="backend" class="doc-section">
+        <div class="doc-heading">
+          <span>04</span>
+          <h2>Connect execution and persistence</h2>
+        </div>
+        <p class="doc-copy">
+          The frontend edits graphs and observes runs. Your system owns actual
+          semantics: queueing, credentials, retries, logs and side effects. The
+          `PipelineBackend` contract is intentionally small so it can wrap REST,
+          WebSocket, SSE or local prototypes.
+        </p>
+        <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <pre><code>{{ backendSnippet }}</code></pre>
+          <tsai-card>
+            <div class="flex flex-col gap-4">
+              <tsai-select
+                [options]="backendOptions"
+                [value]="backendMode()"
+                (valueChange)="backendMode.set($event)"
+              />
+              <tsai-input
+                [value]="search()"
+                (valueChange)="search.set($event)"
+                [clearable]="true"
+                placeholder="Expression path"
+              />
+              <div class="flex flex-wrap gap-2">
+                <tsai-tag variant="accent">{{ search() }}</tsai-tag>
+                <tsai-tag>$json</tsai-tag>
+                <tsai-tag>$trigger</tsai-tag>
+                <tsai-tag>$node</tsai-tag>
+              </div>
+            </div>
+          </tsai-card>
+        </div>
+      </section>
+
+      <section id="ui-kit" class="doc-section">
+        <div class="doc-heading">
+          <span>05</span>
+          <h2>Use the UI kit around the editor</h2>
+        </div>
+        <p class="doc-copy">
+          The package includes the same controls used by the board: buttons,
+          fields, selects, menus, dialogs, tabs, alerts, badges, tables and
+          layout primitives. They share the same tokens as the canvas.
+        </p>
+        <div class="grid gap-4 md:grid-cols-2">
+          <tsai-card>
+            <div class="flex flex-wrap items-center gap-2">
+              <tsai-button>Primary action</tsai-button>
+              <tsai-button variant="secondary">Secondary</tsai-button>
+              <tsai-button variant="ghost">Ghost</tsai-button>
+            </div>
+          </tsai-card>
+          <tsai-card>
+            <div class="flex flex-wrap items-center gap-2">
+              <tsai-badge variant="success">success</tsai-badge>
+              <tsai-badge variant="warning">warning</tsai-badge>
+              <tsai-tag [removable]="true">removable</tsai-tag>
+            </div>
+          </tsai-card>
+        </div>
+      </section>
+
+      <section id="publish" class="doc-section">
+        <div class="doc-heading">
+          <span>06</span>
+          <h2>Release and publish</h2>
+        </div>
+        <p class="doc-copy">
+          Build through Nx so package dependencies, Angular package outputs and
+          docs stay consistent. The Pages workflow publishes the playground at
+          the repository root and this documentation under `/docs/`.
+        </p>
+        <pre><code>{{ publishSnippet }}</code></pre>
+        <tsai-alert variant="success" title="Pages routing">
+          The docs app is built with `--base-href=/pipeline-editor/docs/` and
+          copied into the Pages artifact under `docs/`; playground links back to
+          it from the top navigation.
+        </tsai-alert>
+      </section>
+    </div>
+  </div>
+</main>

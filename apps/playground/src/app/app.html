@@ -24,52 +24,60 @@
         </svg>
       </tsai-button>
     </div>
-    <tsai-button actions variant="secondary" size="sm" (click)="toggleTheme()">
-      {{ isLight() ? '🌙 Dark' : '☀️ Light' }}
-    </tsai-button>
+    <div actions class="flex items-center gap-2">
+      <a
+        class="inline-flex h-8 items-center rounded-sm border border-border bg-surface-2 px-3 text-sm font-medium text-text transition-colors hover:bg-surface-3"
+        href="docs/"
+      >
+        Docs
+      </a>
+      <tsai-button variant="secondary" size="sm" (click)="toggleTheme()">
+        {{ isLight() ? 'Dark' : 'Light' }}
+      </tsai-button>
+    </div>
   </tsai-navbar>
 </ng-template>
 
 @if (fullBleed()) {
-  <main
-    class="flex h-dvh flex-col overflow-hidden"
-    style="
-      background: radial-gradient(
-        100% 55% at 50% 0%,
-        rgba(124, 92, 255, 0.06),
-        transparent 60%
-      );
-    "
-  >
-    <div class="shrink-0 px-4 pt-4 sm:px-6">
-      <ng-container [ngTemplateOutlet]="navbar" />
-    </div>
-    <div class="min-h-0 flex-1 px-4 pt-3 pb-4 sm:px-6">
-      <router-outlet />
-    </div>
-  </main>
+<main
+  class="flex h-dvh flex-col overflow-hidden"
+  style="
+    background: radial-gradient(
+      100% 55% at 50% 0%,
+      rgba(124, 92, 255, 0.06),
+      transparent 60%
+    );
+  "
+>
+  <div class="shrink-0 px-4 pt-4 sm:px-6">
+    <ng-container [ngTemplateOutlet]="navbar" />
+  </div>
+  <div class="min-h-0 flex-1 px-4 pt-3 pb-4 sm:px-6">
+    <router-outlet />
+  </div>
+</main>
 } @else {
-  <main
-    class="min-h-screen"
-    style="
-      background: radial-gradient(
-        100% 55% at 50% 0%,
-        rgba(124, 92, 255, 0.06),
-        transparent 60%
-      );
-    "
-  >
-    <div class="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
-      <ng-container [ngTemplateOutlet]="navbar" />
-      <router-outlet />
-    </div>
-  </main>
+<main
+  class="min-h-screen"
+  style="
+    background: radial-gradient(
+      100% 55% at 50% 0%,
+      rgba(124, 92, 255, 0.06),
+      transparent 60%
+    );
+  "
+>
+  <div class="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
+    <ng-container [ngTemplateOutlet]="navbar" />
+    <router-outlet />
+  </div>
+</main>
 }
 
 <ng-template #pgMenu>
   <tsai-menu>
     @for (p of playgrounds; track p.path) {
-      <tsai-menu-item [routerLink]="p.path">{{ p.label }}</tsai-menu-item>
+    <tsai-menu-item [routerLink]="p.path">{{ p.label }}</tsai-menu-item>
     }
   </tsai-menu>
 </ng-template>

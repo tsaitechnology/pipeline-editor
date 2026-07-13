@@ -1,0 +1,5 @@
+@import '../../../packages/shared/theme/src/index.css';
+@import '@angular/cdk/overlay-prebuilt.css';
+
+@source '../../../packages/ui-kit';
+@source '../../../packages/board';
