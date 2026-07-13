@@ -434,6 +434,11 @@ export class TestBackendSystem implements PipelineBackend {
         const buffer = nodeRun.buffer;
         if (this.tickProgressMs > 0 && buffer && buffer.total > 1) {
           buffer.done = 1;
+          this.log(
+            run,
+            `Merge buffer filled ${buffer.done}/${buffer.total}`,
+            node.id,
+          );
           this.emit(run); // running, 1/N
           this.runBufferWaves(run, pipeline, order, index, nodeRun, output);
           return;
@@ -519,10 +524,22 @@ export class TestBackendSystem implements PipelineBackend {
     if (buffer && buffer.done < buffer.total) {
       this.schedule(run, this.tickProgressMs, () => {
         buffer.done = Math.min(buffer.total, buffer.done + 1);
+        this.log(
+          run,
+          `Merge buffer filled ${buffer.done}/${buffer.total}`,
+          order[index].id,
+        );
         this.emit(run); // still running, done/total
         this.runBufferWaves(run, pipeline, order, index, nodeRun, output);
       });
       return;
+    }
+    if (buffer) {
+      this.log(
+        run,
+        `Merge buffer complete ${buffer.total}/${buffer.total} → emitted 1 batch`,
+        order[index].id,
+      );
     }
     this.succeed(run, pipeline, order, index, nodeRun, output);
   }
@@ -564,13 +581,11 @@ export class TestBackendSystem implements PipelineBackend {
     this.clearIncomingEdges(run, pipeline, split);
     this.recordPassOutput(run, split.id, splitOutput);
 
+    this.log(run, `Split → fan-out ×${total}`, split.id);
     const mergeRun = run.nodes[segment.merge.id];
-    mergeRun.status = 'running';
     mergeRun.buffer = { done: 0, total };
     delete mergeRun.error;
     delete mergeRun.output;
-    this.log(run, `Running "${segment.merge.title}".`, segment.merge.id);
-    this.log(run, `Split → fan-out ×${total}`, split.id);
     this.emit(run);
 
     const batch: unknown[] = [];
@@ -597,7 +612,7 @@ export class TestBackendSystem implements PipelineBackend {
         this.recordPassOutput(run, segment.merge.id, mergeOutput);
         this.log(
           run,
-          `Merge buffered ${total}/${total} → 1 batch`,
+          `Merge buffer complete ${total}/${total} → emitted 1 batch`,
           segment.merge.id,
         );
         this.emit(run);
@@ -640,8 +655,17 @@ export class TestBackendSystem implements PipelineBackend {
         batch.push(item);
         const mergeRun = run.nodes[segment.merge.id];
         this.activateIncomingEdges(run, pipeline, segment.merge);
+        if (mergeRun.status !== 'running') {
+          mergeRun.status = 'running';
+          this.log(run, `Running "${segment.merge.title}".`, segment.merge.id);
+        }
         mergeRun.output = { batch: [...batch], count: batch.length };
         mergeRun.buffer = { done: itemIndex + 1, total };
+        this.log(
+          run,
+          `Merge buffer filled ${itemIndex + 1}/${total}`,
+          segment.merge.id,
+        );
         this.emit(run);
         this.clearIncomingEdges(run, pipeline, segment.merge);
         nextItem(itemIndex + 1);
@@ -961,8 +985,17 @@ export class TestBackendSystem implements PipelineBackend {
         throw new Error(`Merge expected ${total} items, got ${batch.length}`);
       }
       run.outFan[node.id] = 1;
-      nodeRun.buffer = { done: total, total };
-      this.log(run, `Merge buffered ${total}/${total} → 1 batch`, node.id);
+      nodeRun.buffer = {
+        done: this.tickProgressMs > 0 && total > 1 ? 0 : total,
+        total,
+      };
+      if (nodeRun.buffer.done === total) {
+        this.log(
+          run,
+          `Merge buffer complete ${total}/${total} → emitted 1 batch`,
+          node.id,
+        );
+      }
       return { batch, count: batch.length };
     }
 

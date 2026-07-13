@@ -1364,9 +1364,12 @@ describe('TestBackendSystem — split/merge fan-out', () => {
     expect(snap.nodes['merge'].buffer).toEqual({ done: 10, total: 10 });
     // merge collapses the fan back to a single batch downstream
     expect(snap.log.some((l) => /fan-out ×10/i.test(l.message))).toBe(true);
-    expect(snap.log.some((l) => /Merge buffered 10\/10/i.test(l.message))).toBe(
-      true,
-    );
+    expect(
+      snap.log.some((l) => /Merge buffer complete 10\/10/i.test(l.message)),
+    ).toBe(true);
+    expect(
+      snap.log.some((l) => /Merge buffer filled 1\/10/i.test(l.message)),
+    ).toBe(true);
   });
 });
 
@@ -1491,6 +1494,35 @@ describe('TestBackendSystem — fan-out waves', () => {
       ),
     ).toBe(true);
     expect(states.at(-1)?.doneStatus).toBe('success');
+  });
+
+  it('logs split, worker, then merge buffer events in execution order', async () => {
+    const p = pipeline(
+      [
+        trigger('t'),
+        action('split', 'split'),
+        {
+          ...action('img', 'integration'),
+          type: 'image-gen',
+          data: { prompt: '{{ $json }}' },
+        },
+        action('merge', 'merge'),
+      ],
+      [edge('t', 'split'), edge('split', 'img'), edge('img', 'merge')],
+    );
+    const snap = await runToEnd(fast(), p);
+    const messages = snap.log.map((l) => l.message);
+    const splitIndex = messages.findIndex((m) => /Split → fan-out ×10/.test(m));
+    const workerIndex = messages.findIndex((m) => /Running "img"\./.test(m));
+    const mergeIndex = messages.findIndex((m) => /Running "merge"\./.test(m));
+    const bufferIndex = messages.findIndex((m) =>
+      /Merge buffer filled 1\/10/.test(m),
+    );
+
+    expect(splitIndex).toBeGreaterThanOrEqual(0);
+    expect(workerIndex).toBeGreaterThan(splitIndex);
+    expect(mergeIndex).toBeGreaterThan(workerIndex);
+    expect(bufferIndex).toBeGreaterThanOrEqual(mergeIndex);
   });
 });
 
