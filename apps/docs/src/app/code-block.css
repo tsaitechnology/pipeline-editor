@@ -1,8 +1,8 @@
-:host {
+app-code-block {
   display: block;
 }
 
-.code-frame {
+app-code-block .code-frame {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -10,7 +10,7 @@
   box-shadow: inset 0 1px 0 var(--highlight-top);
 }
 
-.code-toolbar {
+app-code-block .code-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -24,7 +24,7 @@
   text-transform: uppercase;
 }
 
-.copy-button {
+app-code-block .copy-button {
   display: inline-grid;
   width: 1.75rem;
   height: 1.75rem;
@@ -39,29 +39,29 @@
     border-color var(--dur-fast) var(--ease-out);
 }
 
-.copy-button:hover,
-.copy-button.copied {
+app-code-block .copy-button:hover,
+app-code-block .copy-button.copied {
   border-color: var(--border-strong);
   background: var(--surface-3);
   color: var(--text);
 }
 
-.code-scroll {
+app-code-block .code-scroll {
   overflow: auto;
 }
 
-.code-scroll :where(pre.shiki) {
+app-code-block .code-scroll :where(pre.shiki) {
   margin: 0;
   padding: 1rem;
   background: transparent !important;
 }
 
-.code-scroll :where(.shiki),
-.code-scroll :where(.shiki span) {
+app-code-block .code-scroll :where(.shiki),
+app-code-block .code-scroll :where(.shiki span) {
   color: var(--shiki-dark) !important;
 }
 
-.code-scroll :where(code) {
+app-code-block .code-scroll :where(code) {
   display: block;
   min-width: max-content;
   color: var(--text);
@@ -70,7 +70,7 @@
   line-height: 1.65;
 }
 
-:host-context(.light) .code-scroll :where(.shiki),
-:host-context(.light) .code-scroll :where(.shiki span) {
+.light app-code-block .code-scroll :where(.shiki),
+.light app-code-block .code-scroll :where(.shiki span) {
   color: var(--shiki-light) !important;
 }

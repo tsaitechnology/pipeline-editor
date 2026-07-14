@@ -7,6 +7,7 @@ import {
   inject,
   input,
   signal,
+  ViewEncapsulation,
 } from '@angular/core';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { Check, Clipboard, LucideAngularModule } from 'lucide-angular';
@@ -53,6 +54,7 @@ function getHighlighter(): Promise<HighlighterCore> {
 @Component({
   selector: 'app-code-block',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  encapsulation: ViewEncapsulation.None,
   imports: [NgClass, LucideAngularModule],
   template: `
     <div class="code-frame">
