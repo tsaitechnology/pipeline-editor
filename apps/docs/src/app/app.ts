@@ -1,11 +1,5 @@
 import { NgClass } from '@angular/common';
-import {
-  ChangeDetectionStrategy,
-  Component,
-  inject,
-  signal,
-} from '@angular/core';
-import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
+import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import {
   Board,
   PIPELINE_BACKEND,
@@ -29,13 +23,12 @@ import {
   Tag,
 } from '@tsai-pe/ui-kit';
 import { LucideAngularModule, Moon, Sun } from 'lucide-angular';
+import { CodeBlock } from './code-block';
 
 interface NavItem {
   id: string;
   label: string;
 }
-
-type CodeLanguage = 'bash' | 'css' | 'ts';
 
 const DEMO_BACKEND = new TestBackendSystem({
   stepDelayMs: 350,
@@ -55,51 +48,6 @@ function edge(id: string, from: string, fromPort: string, to: string) {
     source: { nodeId: from, portId: fromPort },
     target: { nodeId: to, portId: 'in' },
   };
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-function highlightBash(code: string): string {
-  return escapeHtml(code)
-    .replace(
-      /^(npm|npx|pnpm|yarn)(\s+)/gm,
-      '<span class="syntax-keyword">$1</span>$2',
-    )
-    .replace(/(--[\w-]+)/g, '<span class="syntax-attr">$1</span>')
-    .replace(/(@[\w-]+\/[\w-]+)/g, '<span class="syntax-type">$1</span>');
-}
-
-function highlightCss(code: string): string {
-  return escapeHtml(code)
-    .replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="syntax-comment">$1</span>')
-    .replace(/(@[\w-]+)/g, '<span class="syntax-keyword">$1</span>')
-    .replace(/('.*?')/g, '<span class="syntax-string">$1</span>');
-}
-
-function highlightTypeScript(code: string): string {
-  return escapeHtml(code)
-    .replace(/(\/\/.*$)/gm, '<span class="syntax-comment">$1</span>')
-    .replace(
-      /('(?:\\.|[^'])*'|`(?:\\.|[^`])*`)/g,
-      '<span class="syntax-string">$1</span>',
-    )
-    .replace(
-      /\b(import|export|from|const|readonly|class|implements|return|new|async|await|type|interface|providers|template|selector|imports|useValue|useExisting|useFactory)\b/g,
-      '<span class="syntax-keyword">$1</span>',
-    )
-    .replace(
-      /\b(Component|Pipeline|PipelineBackend|PipelineStore|RunListener|Unsubscribe|NodeCatalog|BoardNode|NodeTypeSpec|ExpressionScope)\b/g,
-      '<span class="syntax-type">$1</span>',
-    )
-    .replace(
-      /(\b[A-Za-z_$][\w$]*)(?=\s*:)/g,
-      '<span class="syntax-attr">$1</span>',
-    );
 }
 
 const STARTER_PIPELINE: Pipeline = {
@@ -186,6 +134,7 @@ DEMO_STORE.save(STARTER_PIPELINE);
     Select,
     Table,
     LucideAngularModule,
+    CodeBlock,
   ],
   providers: [
     { provide: PIPELINE_BACKEND, useValue: DEMO_BACKEND },
@@ -196,8 +145,6 @@ DEMO_STORE.save(STARTER_PIPELINE);
   styleUrl: './app.css',
 })
 export class App {
-  private readonly sanitizer = inject(DomSanitizer);
-
   protected readonly Sun = Sun;
   protected readonly Moon = Moon;
   protected readonly isLight = signal(false);
@@ -210,12 +157,20 @@ export class App {
     { id: 'start', label: 'Start' },
     { id: 'install', label: 'Install' },
     { id: 'board', label: 'Board' },
+    { id: 'concepts', label: 'Concepts' },
+    { id: 'model', label: 'Model' },
     { id: 'catalog', label: 'Catalog' },
+    { id: 'params', label: 'Params' },
     { id: 'ports', label: 'Ports' },
     { id: 'styling', label: 'Styling' },
     { id: 'expressions', label: 'Expressions' },
     { id: 'backend', label: 'Backend' },
+    { id: 'security', label: 'Security' },
+    { id: 'recipes', label: 'Recipes' },
+    { id: 'reference', label: 'Reference' },
     { id: 'ui-kit', label: 'UI Kit' },
+    { id: 'troubleshooting', label: 'Troubleshooting' },
+    { id: 'production', label: 'Production' },
   ];
 
   protected readonly packageColumns: TableColumn[] = [
@@ -238,6 +193,234 @@ export class App {
     { value: 'rest-ws', label: 'REST + WebSocket adapter' },
     { value: 'local', label: 'Local prototype backend' },
     { value: 'readonly', label: 'Read-only catalog viewer' },
+  ];
+
+  protected readonly paramColumns: TableColumn[] = [
+    { key: 'type', label: 'Type' },
+    { key: 'use', label: 'Use' },
+  ];
+
+  protected readonly conceptColumns: TableColumn[] = [
+    { key: 'piece', label: 'Piece' },
+    { key: 'owner', label: 'Owner' },
+    { key: 'why', label: 'Why it matters' },
+  ];
+
+  protected readonly concepts: TableRow[] = [
+    {
+      piece: 'Pipeline document',
+      owner: 'Host app',
+      why: 'Serializable graph you can store, diff, import and run.',
+    },
+    {
+      piece: 'Node catalog',
+      owner: 'Product/backend team',
+      why: 'Controls palette entries, inspector fields, ports and expression help.',
+    },
+    {
+      piece: 'Board UI',
+      owner: '@tsai-pe/board',
+      why: 'Canvas, editing, validation, inspector, run overlay and persistence controls.',
+    },
+    {
+      piece: 'Runtime backend',
+      owner: 'Your system',
+      why: 'Executes semantics, credentials, logs, retries and side effects.',
+    },
+  ];
+
+  protected readonly lifecycleColumns: TableColumn[] = [
+    { key: 'step', label: 'Step' },
+    { key: 'contract', label: 'Contract' },
+  ];
+
+  protected readonly lifecycle: TableRow[] = [
+    {
+      step: '1. Catalog',
+      contract: 'Describe what users can add and configure.',
+    },
+    {
+      step: '2. Edit',
+      contract: '`pe-board` updates the graph and validates wiring.',
+    },
+    {
+      step: '3. Save',
+      contract: '`PipelineStore.save()` persists the serializable document.',
+    },
+    {
+      step: '4. Run',
+      contract: '`PipelineBackend.startRun()` submits a snapshot.',
+    },
+    {
+      step: '5. Observe',
+      contract:
+        '`observe()` streams node status, outputs, edge activity and logs.',
+    },
+  ];
+
+  protected readonly params: TableRow[] = [
+    { type: 'text / textarea / url', use: 'Plain user-entered strings' },
+    { type: 'number / boolean / select', use: 'Typed configuration controls' },
+    { type: 'expression', use: '$json, $trigger and upstream node refs' },
+    { type: 'json / object / array', use: 'Structured payloads and repeaters' },
+    { type: 'secret / credential', use: 'Backend-owned sensitive references' },
+    { type: 'code', use: 'Sandboxed transform snippets' },
+    { type: 'model / resource-picker', use: 'Product-specific selectors' },
+  ];
+
+  protected readonly apiColumns: TableColumn[] = [
+    { key: 'name', label: 'API' },
+    { key: 'contract', label: 'Contract' },
+  ];
+
+  protected readonly apis: TableRow[] = [
+    {
+      name: 'Board',
+      contract: '`pipeline`, `readonly`, injected capabilities',
+    },
+    {
+      name: 'NodeTypeSpec',
+      contract: 'Palette entry, params, ports and output help',
+    },
+    {
+      name: 'ParamField',
+      contract: 'Inspector field schema and visibility rules',
+    },
+    { name: 'PipelineBackend', contract: '`startRun`, `observe`, `stop`' },
+    {
+      name: 'PipelineStore',
+      contract: '`save`, `load`, `list`, `remove`, `runHistory`',
+    },
+  ];
+
+  protected readonly issueColumns: TableColumn[] = [
+    { key: 'symptom', label: 'Symptom' },
+    { key: 'fix', label: 'Fix' },
+  ];
+
+  protected readonly tokenColumns: TableColumn[] = [
+    { key: 'token', label: 'Token' },
+    { key: 'description', label: 'Description' },
+  ];
+
+  protected readonly tokens: TableRow[] = [
+    {
+      token: '--accent',
+      description: 'Primary actions, focus and selected state.',
+    },
+    {
+      token: '--canvas-bg',
+      description: 'Board well behind nodes and connection routing.',
+    },
+    {
+      token: '--node-trigger',
+      description: 'Trigger rail, icon and port accent.',
+    },
+    {
+      token: '--node-integration',
+      description: 'Integration/action node accent.',
+    },
+    {
+      token: '--node-control-flow',
+      description: 'If, switch, filter and router accent.',
+    },
+    {
+      token: '--node-effect',
+      description: 'Terminal side-effect node accent.',
+    },
+  ];
+
+  protected readonly componentColumns: TableColumn[] = [
+    { key: 'component', label: 'Component' },
+    { key: 'use', label: 'Use' },
+  ];
+
+  protected readonly components: TableRow[] = [
+    {
+      component: 'tsai-button / badge / tag',
+      use: 'Actions, status, filters and compact metadata.',
+    },
+    {
+      component: 'tsai-input / select / textarea',
+      use: 'Host settings panels and custom node forms.',
+    },
+    {
+      component: 'tsai-expression-field',
+      use: 'Expression authoring with scoped autocomplete.',
+    },
+    {
+      component: 'tsai-json-view / variable',
+      use: 'Output inspection and draggable references.',
+    },
+    {
+      component: 'tsai-dialog / modal-overlay / toast',
+      use: 'Confirmation, import/export and runtime feedback.',
+    },
+    {
+      component: 'tsai-sidebar / navbar / actionbar',
+      use: 'Product shell around the board.',
+    },
+  ];
+
+  protected readonly productionColumns: TableColumn[] = [
+    { key: 'area', label: 'Area' },
+    { key: 'check', label: 'Check' },
+  ];
+
+  protected readonly production: TableRow[] = [
+    {
+      area: 'Catalog versioning',
+      check:
+        'Keep stable `id`s; migrate saved pipelines when params or ports change.',
+    },
+    {
+      area: 'Credentials',
+      check:
+        'Store secret values outside the pipeline document; nodes reference credential ids.',
+    },
+    {
+      area: 'Validation',
+      check:
+        'Reject invalid graphs server-side even if the editor already warns users.',
+    },
+    {
+      area: 'Run isolation',
+      check:
+        'Submit an immutable pipeline snapshot and label updates with one run id.',
+    },
+    {
+      area: 'Observability',
+      check:
+        'Persist logs, terminal status and run history for later inspection.',
+    },
+    {
+      area: 'Permissions',
+      check:
+        'Filter catalog entries and credential pickers by the current user/team.',
+    },
+  ];
+
+  protected readonly issues: TableRow[] = [
+    {
+      symptom: 'Board is invisible',
+      fix: 'Give the host a real height, for example `h-dvh` or a flex child with `min-h-0`.',
+    },
+    {
+      symptom: 'Styles are missing',
+      fix: 'Import `@tsai-pe/theme` and include `@source ../node_modules/@tsai-pe` in Tailwind v4 styles.',
+    },
+    {
+      symptom: 'Palette is empty',
+      fix: 'Provide `PIPELINE_NODE_CATALOG` with at least one `NodeTypeSpec`.',
+    },
+    {
+      symptom: 'Run button is missing',
+      fix: 'Provide `PIPELINE_BACKEND`; omit it intentionally for design-only editors.',
+    },
+    {
+      symptom: 'Save/Open are missing',
+      fix: 'Provide `PIPELINE_STORE`; read-only viewers usually omit it.',
+    },
   ];
 
   protected readonly installSnippet = `npm install @tsai-pe/board @tsai-pe/ui-kit @tsai-pe/theme @tsai-pe/models @tsai-pe/nodes lucide-angular @angular/cdk @angular/aria`;
@@ -268,6 +451,38 @@ export class WorkflowBuilder {
   readonly pipeline = signal<Pipeline>(initialPipeline);
 }`;
 
+  protected readonly pipelineSnippet = `import type { Pipeline } from '@tsai-pe/models';
+
+export const leadPipeline: Pipeline = {
+  id: 'lead-intake',
+  name: 'Lead intake',
+  nodes: [
+    {
+      id: 'webhook',
+      type: 'webhook-trigger',
+      kind: 'trigger',
+      title: 'Webhook',
+      pos: { col: 2, row: 2 },
+      size: { cols: 7, rows: 2 },
+      ports: [{ id: 'out-right', role: 'output', side: 'right' }],
+      data: { path: '/lead' },
+    },
+  ],
+  edges: [],
+};`;
+
+  protected readonly nodeSpecSnippet = `export interface NodeTypeSpec {
+  id: string;
+  label: string;
+  section?: string;
+  kind: 'trigger' | 'action' | 'effect';
+  category?: 'control-flow' | 'transform' | 'integration' | 'split' | 'merge';
+  params: ParamField[];
+  ports?: NodePortSpec;
+  outputSchema?: OutputSchema;
+  outputExample?: Record<string, unknown>;
+}`;
+
   protected readonly catalogSnippet = `import { createNodeCatalog } from '@tsai-pe/nodes';
 
 export const MY_NODE_CATALOG = createNodeCatalog([
@@ -286,6 +501,24 @@ export const MY_NODE_CATALOG = createNodeCatalog([
     outputExample: { leadId: 'lead_123', status: 'created' },
   },
 ]);`;
+
+  protected readonly paramSnippet = `{
+  key: 'body',
+  label: 'Request body',
+  type: 'object',
+  section: 'HTTP',
+  fields: [
+    { key: 'url', label: 'URL', type: 'url', required: true },
+    { key: 'method', label: 'Method', type: 'select', options: [
+      { value: 'GET', label: 'GET' },
+      { value: 'POST', label: 'POST' },
+    ] },
+    { key: 'payload', label: 'Payload', type: 'json', visibleWhen: {
+      key: 'method',
+      equals: 'POST',
+    } },
+  ],
+} satisfies ParamField;`;
 
   protected readonly portSnippet = `import type { NodeTypeSpec } from '@tsai-pe/nodes';
 
@@ -336,6 +569,23 @@ export const ROUTER_NODE = {
   --accent: #0b7285;
 }`;
 
+  protected readonly credentialSnippet = `export const SEND_EMAIL_NODE: NodeTypeSpec = {
+  id: 'send-email',
+  label: 'Send Email',
+  kind: 'effect',
+  section: 'Messaging',
+  params: [
+    { key: 'credentialId', label: 'SMTP account', type: 'credential', required: true },
+    { key: 'to', label: 'To', type: 'expression', required: true },
+    { key: 'subject', label: 'Subject', type: 'expression', required: true },
+    { key: 'body', label: 'Body', type: 'textarea', required: true },
+  ],
+  outputExample: { messageId: 'msg_123', accepted: true },
+};
+
+// Runtime rule: the pipeline stores credential ids, never secret values.
+const credential = await credentialVault.resolve(node.data.credentialId);`;
+
   protected readonly expressionSnippet = `import type { ExpressionScope } from '@tsai-pe/ui-kit';
 
 readonly scope: ExpressionScope = {
@@ -355,6 +605,47 @@ template: \`
     (valueChange)="message = $event"
   />
 \`;`;
+
+  protected readonly recipeSnippet = `export const SUPPORT_TRIAGE = createNodeCatalog([
+  webhookTrigger(),
+  llmClassifier({
+    id: 'classify-ticket',
+    labels: ['billing', 'bug', 'feature'],
+    outputExample: { label: 'billing', priority: 'high' },
+  }),
+  router({
+    id: 'route-ticket',
+    routes: ['billing', 'bug', 'feature'],
+  }),
+  effect({
+    id: 'create-linear-issue',
+    params: ['title', 'description', 'teamId'],
+  }),
+]);`;
+
+  protected readonly eventSnippet = `backend.observe(runId, (snapshot) => {
+  for (const [nodeId, run] of Object.entries(snapshot.nodes)) {
+    updateNodeStatus(nodeId, run.status);
+    if (run.output) cacheOutputForInspector(nodeId, run.output);
+  }
+
+  appendLogs(snapshot.log);
+});`;
+
+  protected readonly snapshotSnippet = `export interface RunSnapshot {
+  runId: string;
+  status: 'pending' | 'running' | 'success' | 'error' | 'canceled';
+  nodes: Record<string, {
+    nodeId: string;
+    status: 'idle' | 'running' | 'success' | 'error' | 'skipped';
+    output?: unknown;
+    error?: string;
+    buffer?: { done: number; total: number };
+  }>;
+  edges?: Record<string, { edgeId: string; status: 'idle' | 'active' }>;
+  log: { at: number; nodeId?: string; message: string }[];
+  passes?: { triggerIndex: number; outputs: Record<string, unknown> }[];
+}`;
 
   protected readonly backendSnippet = `import type { Pipeline, PipelineBackend, RunListener, Unsubscribe } from '@tsai-pe/models';
 
@@ -403,17 +694,6 @@ export class HttpPipelineStore implements PipelineStore {
     return fetch(\`/api/pipelines/\${pipelineId}/runs\`).then((res) => res.json());
   }
 }`;
-
-  protected highlight(code: string, language: CodeLanguage): SafeHtml {
-    const html =
-      language === 'bash'
-        ? highlightBash(code)
-        : language === 'css'
-          ? highlightCss(code)
-          : highlightTypeScript(code);
-
-    return this.sanitizer.bypassSecurityTrustHtml(html);
-  }
 
   protected go(id: string): void {
     this.active.set(id);

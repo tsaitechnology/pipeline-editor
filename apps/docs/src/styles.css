@@ -3,39 +3,3 @@
 
 @source '../../../packages/ui-kit';
 @source '../../../packages/board';
-
-.syntax-keyword {
-  color: #8ab4ff;
-}
-
-.syntax-type {
-  color: #7ee787;
-}
-
-.syntax-attr {
-  color: #f2cc60;
-}
-
-.syntax-string {
-  color: #ffb86b;
-}
-
-.syntax-comment {
-  color: var(--text-3);
-}
-
-.light .syntax-keyword {
-  color: #3b5bdb;
-}
-
-.light .syntax-type {
-  color: #087f5b;
-}
-
-.light .syntax-attr {
-  color: #9c6f19;
-}
-
-.light .syntax-string {
-  color: #c2410c;
-}

@@ -6,17 +6,35 @@
       <a class="min-w-0 flex-1 text-sm font-semibold text-text" href="#start">
         Pipeline Editor
       </a>
-      <nav class="hidden items-center gap-1 lg:flex" aria-label="Docs">
-        @for (item of nav; track item.id) {
-        <button
-          type="button"
+      <nav class="hidden items-center gap-1 xl:flex" aria-label="Docs">
+        <a
           class="rounded-sm px-2.5 py-1.5 text-sm text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
-          [ngClass]="{ 'bg-surface-2 text-text': active() === item.id }"
-          (click)="go(item.id)"
+          href="#install"
+          (click)="go('install')"
         >
-          {{ item.label }}
-        </button>
-        }
+          Install
+        </a>
+        <a
+          class="rounded-sm px-2.5 py-1.5 text-sm text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
+          href="#catalog"
+          (click)="go('catalog')"
+        >
+          Customize
+        </a>
+        <a
+          class="rounded-sm px-2.5 py-1.5 text-sm text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
+          href="#backend"
+          (click)="go('backend')"
+        >
+          Runtime
+        </a>
+        <a
+          class="rounded-sm px-2.5 py-1.5 text-sm text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
+          href="#reference"
+          (click)="go('reference')"
+        >
+          Reference
+        </a>
       </nav>
       <a
         class="rounded-sm border border-border bg-surface-2 px-3 py-1.5 text-sm text-text transition-colors hover:bg-surface-3"
@@ -118,8 +136,8 @@
           data contracts and node registry because host applications provide
           their own catalog, store and backend implementation.
         </p>
-        <pre><code [innerHTML]="highlight(installSnippet, 'bash')"></code></pre>
-        <pre><code [innerHTML]="highlight(stylesSnippet, 'css')"></code></pre>
+        <app-code-block [code]="installSnippet" language="bash" />
+        <app-code-block [code]="stylesSnippet" language="css" />
         <tsai-table [columns]="packageColumns" [rows]="packages" />
       </section>
 
@@ -134,7 +152,7 @@
           backend for run/observe/stop. Omit store or backend to hide those
           controls in read-only or design-only contexts.
         </p>
-        <pre><code [innerHTML]="highlight(boardSnippet, 'ts')"></code></pre>
+        <app-code-block [code]="boardSnippet" language="typescript" />
         <tsai-alert variant="info" title="Inputs and tokens">
           Pass `[pipeline]` to load a document and `[readonly]="true"` to
           disable editing. Provide `PIPELINE_NODE_CATALOG`, `PIPELINE_STORE` and
@@ -142,9 +160,37 @@
         </tsai-alert>
       </section>
 
-      <section id="catalog" class="doc-section">
+      <section id="concepts" class="doc-section">
         <div class="doc-heading">
           <span>03</span>
+          <h2>Understand the integration model</h2>
+        </div>
+        <p class="doc-copy">
+          Pipeline Editor is not a hosted automation service. It is a UI kit for
+          product teams that want to embed a workflow builder while keeping
+          execution, credentials, permissions and persistence in their own
+          system.
+        </p>
+        <tsai-table [columns]="conceptColumns" [rows]="concepts" />
+        <tsai-table [columns]="lifecycleColumns" [rows]="lifecycle" />
+      </section>
+
+      <section id="model" class="doc-section">
+        <div class="doc-heading">
+          <span>04</span>
+          <h2>Store pipelines as plain data</h2>
+        </div>
+        <p class="doc-copy">
+          A pipeline is a serializable graph: nodes, edges and domain-specific
+          `data`. Keep IDs stable, store snapshots as JSON and run exactly the
+          graph the user saved or submitted.
+        </p>
+        <app-code-block [code]="pipelineSnippet" language="typescript" />
+      </section>
+
+      <section id="catalog" class="doc-section">
+        <div class="doc-heading">
+          <span>05</span>
           <h2>Describe your node catalog</h2>
         </div>
         <p class="doc-copy">
@@ -152,7 +198,8 @@
           its params, ports and output example. Those fields drive palette
           groups, inspector forms, dynamic switch outputs and expression help.
         </p>
-        <pre><code [innerHTML]="highlight(catalogSnippet, 'ts')"></code></pre>
+        <app-code-block [code]="catalogSnippet" language="typescript" />
+        <app-code-block [code]="nodeSpecSnippet" language="typescript" />
         <div class="grid gap-4 md:grid-cols-3">
           <tsai-card>
             <h3 class="mb-2 text-sm font-semibold text-text">Params</h3>
@@ -178,9 +225,24 @@
         </div>
       </section>
 
+      <section id="params" class="doc-section">
+        <div class="doc-heading">
+          <span>06</span>
+          <h2>Build inspector forms from params</h2>
+        </div>
+        <p class="doc-copy">
+          `ParamField` is the schema for the right-side inspector. Use sections
+          to group advanced settings, `visibleWhen` to keep forms short and
+          object/array fields for structured configuration without writing a
+          custom inspector.
+        </p>
+        <app-code-block [code]="paramSnippet" language="typescript" />
+        <tsai-table [columns]="paramColumns" [rows]="params" />
+      </section>
+
       <section id="ports" class="doc-section">
         <div class="doc-heading">
-          <span>04</span>
+          <span>07</span>
           <h2>Model custom ports and routing</h2>
         </div>
         <p class="doc-copy">
@@ -189,7 +251,7 @@
           enough for if/switch nodes, fan-out, split/merge workflows, optional
           fallbacks and product-specific routing rules.
         </p>
-        <pre><code [innerHTML]="highlight(portSnippet, 'ts')"></code></pre>
+        <app-code-block [code]="portSnippet" language="typescript" />
         <div class="grid gap-4 md:grid-cols-3">
           <tsai-card>
             <h3 class="mb-2 text-sm font-semibold text-text">Static</h3>
@@ -217,7 +279,7 @@
 
       <section id="styling" class="doc-section">
         <div class="doc-heading">
-          <span>05</span>
+          <span>08</span>
           <h2>Theme and style the editor</h2>
         </div>
         <p class="doc-copy">
@@ -225,16 +287,17 @@
           Tailwind classes and override CSS variables in your product shell.
           Board, nodes, forms and UI kit controls read the same tokens.
         </p>
-        <pre><code [innerHTML]="highlight(stylingSnippet, 'css')"></code></pre>
+        <app-code-block [code]="stylingSnippet" language="css" />
         <tsai-alert variant="info" title="Dark and light">
           Dark is the default. Add `.light` to the document root or an app shell
           to switch token values without replacing components.
         </tsai-alert>
+        <tsai-table [columns]="tokenColumns" [rows]="tokens" />
       </section>
 
       <section id="expressions" class="doc-section">
         <div class="doc-heading">
-          <span>06</span>
+          <span>09</span>
           <h2>Expose expressions and variables</h2>
         </div>
         <p class="doc-copy">
@@ -243,7 +306,7 @@
           and upstream node outputs so users get autocomplete for valid
           references.
         </p>
-        <pre><code [innerHTML]="highlight(expressionSnippet, 'ts')"></code></pre>
+        <app-code-block [code]="expressionSnippet" language="typescript" />
         <div class="flex flex-wrap gap-2">
           <tsai-tag variant="accent">$json.customer.email</tsai-tag>
           <tsai-tag>$trigger.body.email</tsai-tag>
@@ -253,7 +316,7 @@
 
       <section id="backend" class="doc-section">
         <div class="doc-heading">
-          <span>07</span>
+          <span>10</span>
           <h2>Connect execution and persistence</h2>
         </div>
         <p class="doc-copy">
@@ -263,7 +326,7 @@
           WebSocket, SSE or local prototypes.
         </p>
         <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <pre><code [innerHTML]="highlight(backendSnippet, 'ts')"></code></pre>
+          <app-code-block [code]="backendSnippet" language="typescript" />
           <tsai-card>
             <div class="flex flex-col gap-4">
               <tsai-select
@@ -286,12 +349,90 @@
             </div>
           </tsai-card>
         </div>
-        <pre><code [innerHTML]="highlight(storeSnippet, 'ts')"></code></pre>
+        <app-code-block [code]="storeSnippet" language="typescript" />
+        <app-code-block [code]="eventSnippet" language="typescript" />
+        <app-code-block [code]="snapshotSnippet" language="typescript" />
+      </section>
+
+      <section id="security" class="doc-section">
+        <div class="doc-heading">
+          <span>11</span>
+          <h2>Keep credentials and permissions server-owned</h2>
+        </div>
+        <p class="doc-copy">
+          The editor can render credential selectors, but secret material should
+          never be serialized into `Pipeline.data`. Store references in the
+          pipeline and resolve them inside the backend runtime with the current
+          user's permissions.
+        </p>
+        <app-code-block [code]="credentialSnippet" language="typescript" />
+        <tsai-alert variant="warning" title="Trust boundary">
+          Treat every submitted pipeline as user input. Revalidate graph shape,
+          node permissions, credential access and expression safety before
+          starting a run.
+        </tsai-alert>
+      </section>
+
+      <section id="recipes" class="doc-section">
+        <div class="doc-heading">
+          <span>12</span>
+          <h2>Start from product recipes</h2>
+        </div>
+        <p class="doc-copy">
+          Good host apps usually ship a small catalog of domain recipes instead
+          of exposing generic building blocks first. Model the common flows your
+          users already understand, then let advanced users compose lower-level
+          transform, routing and effect nodes.
+        </p>
+        <app-code-block [code]="recipeSnippet" language="typescript" />
+        <div class="grid gap-4 md:grid-cols-2">
+          <tsai-card>
+            <h3 class="mb-2 text-sm font-semibold text-text">Customer ops</h3>
+            <p class="text-sm leading-6 text-text-2">
+              Webhook trigger, enrichment, LLM classifier, CRM update, Slack or
+              email notification.
+            </p>
+          </tsai-card>
+          <tsai-card>
+            <h3 class="mb-2 text-sm font-semibold text-text">AI agents</h3>
+            <p class="text-sm leading-6 text-text-2">
+              Prompt, tool call, branch on confidence, human approval, memory
+              write and final response.
+            </p>
+          </tsai-card>
+          <tsai-card>
+            <h3 class="mb-2 text-sm font-semibold text-text">Data pipelines</h3>
+            <p class="text-sm leading-6 text-text-2">
+              Fetch, normalize, split rows, transform each item, merge results
+              and write to a warehouse.
+            </p>
+          </tsai-card>
+          <tsai-card>
+            <h3 class="mb-2 text-sm font-semibold text-text">Approval flows</h3>
+            <p class="text-sm leading-6 text-text-2">
+              Trigger, policy check, conditional route, reviewer task, timeout
+              fallback and final effect.
+            </p>
+          </tsai-card>
+        </div>
+      </section>
+
+      <section id="reference" class="doc-section">
+        <div class="doc-heading">
+          <span>13</span>
+          <h2>Know the main extension points</h2>
+        </div>
+        <p class="doc-copy">
+          The public surface is intentionally small. Most custom behavior comes
+          from catalog metadata, injected backend/store adapters and shared
+          tokens, not from subclassing visual components.
+        </p>
+        <tsai-table [columns]="apiColumns" [rows]="apis" />
       </section>
 
       <section id="ui-kit" class="doc-section">
         <div class="doc-heading">
-          <span>08</span>
+          <span>14</span>
           <h2>Use the UI kit around the editor</h2>
         </div>
         <p class="doc-copy">
@@ -299,6 +440,7 @@
           fields, selects, menus, dialogs, tabs, alerts, badges, tables and
           layout primitives. They share the same tokens as the canvas.
         </p>
+        <tsai-table [columns]="componentColumns" [rows]="components" />
         <div class="grid gap-4 md:grid-cols-2">
           <tsai-card>
             <div class="flex flex-wrap items-center gap-2">
@@ -315,6 +457,32 @@
             </div>
           </tsai-card>
         </div>
+      </section>
+
+      <section id="troubleshooting" class="doc-section">
+        <div class="doc-heading">
+          <span>15</span>
+          <h2>Troubleshoot integration issues</h2>
+        </div>
+        <p class="doc-copy">
+          Most integration failures are host-app wiring problems: missing
+          height, missing Tailwind source scanning or intentionally omitted
+          injection tokens.
+        </p>
+        <tsai-table [columns]="issueColumns" [rows]="issues" />
+      </section>
+
+      <section id="production" class="doc-section">
+        <div class="doc-heading">
+          <span>16</span>
+          <h2>Ship with a production checklist</h2>
+        </div>
+        <p class="doc-copy">
+          A strong integration is not just a working canvas. Treat catalogs,
+          migrations, runtime isolation, permissions and observability as part
+          of the product contract.
+        </p>
+        <tsai-table [columns]="productionColumns" [rows]="production" />
       </section>
     </div>
   </div>
