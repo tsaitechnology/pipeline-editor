@@ -1,0 +1,75 @@
+name: Release to npm
+
+# Manual release: bumps versions, writes changelogs, tags, and publishes the
+# 7 public @tsai-pe/* packages to npm. Run it from the Actions tab.
+#
+# Required repo secret:
+#   NPM_TOKEN — an npm **Granular Access Token** with "Bypass 2FA" enabled and
+#   read/write access to the @tsai-pe scope (the account has 2FA, so a plain
+#   automation login will 403). Settings → Secrets and variables → Actions.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version bump (a specifier like patch / minor / major, or an exact version like 0.2.0)'
+        required: true
+        default: patch
+      first-release:
+        description: 'First release for these packages (skip git-tag lookup)'
+        type: boolean
+        default: false
+      dry-run:
+        description: 'Dry run — no version bump, no tags, no publish'
+        type: boolean
+        default: false
+
+# `contents: write` lets the job push the release commit and tags back to main.
+permissions:
+  contents: write
+
+env:
+  NX_NO_CLOUD: 'true'
+
+# Never run two releases at once.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Full history + tags so nx release can resolve the current version
+          # and compute conventional-commit changelogs.
+          fetch-depth: 0
+          filter: tree:0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+          # Writes an .npmrc that authenticates via NODE_AUTH_TOKEN below.
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm ci
+
+      - name: Configure git identity for the release commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Release (version, changelog, publish)
+        env:
+          # setup-node's .npmrc reads this; the token must bypass 2FA.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          FLAGS="--yes"
+          [ "${{ inputs.first-release }}" = "true" ] && FLAGS="$FLAGS --first-release"
+          [ "${{ inputs.dry-run }}" = "true" ] && FLAGS="$FLAGS --dry-run"
+          npx nx release "${{ inputs.version }}" $FLAGS
+
+      - name: Push release commit and tags
+        if: ${{ inputs.dry-run == false }}
+        run: git push --follow-tags origin HEAD:${{ github.ref_name }}
