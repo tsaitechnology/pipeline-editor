@@ -66,12 +66,7 @@
     }
   },
   "release": {
-    "projects": [
-      "packages/*",
-      "packages/board/*",
-      "packages/shared/*",
-      "packages/workflow/*"
-    ],
+    "projects": ["packages/*", "packages/board/*", "packages/shared/*"],
     "projectsRelationship": "independent",
     "version": {
       "preVersionCommand": "npx nx run-many -t build",
@@ -86,7 +81,8 @@
       ]
     },
     "changelog": {
-      "projectChangelogs": true
+      "projectChangelogs": true,
+      "workspaceChangelog": false
     }
   },
   "plugins": [
