@@ -6,9 +6,9 @@
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
   "dependencies": {
-    "@tsai-pe/models": "0.0.1",
+    "@tsai-pe/models": "0.1.0",
     "tslib": "^2.3.0",
-    "@tsai-pe/nodes": "0.0.1"
+    "@tsai-pe/nodes": "0.1.0"
   },
   "description": "Pipeline Editor — in-browser mock backend for dev/demo (evaluates expressions).",
   "keywords": [

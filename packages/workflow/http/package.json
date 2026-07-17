@@ -7,7 +7,7 @@
   "types": "./src/index.d.ts",
   "dependencies": {
     "tslib": "^2.3.0",
-    "@tsai-pe/models": "0.0.1"
+    "@tsai-pe/models": "0.1.0"
   },
   "description": "Pipeline Editor — REST/WS PipelineBackend adapter skeleton.",
   "keywords": [

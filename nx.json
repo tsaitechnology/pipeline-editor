@@ -66,7 +66,12 @@
     }
   },
   "release": {
-    "projects": ["packages/*", "packages/board/*", "packages/shared/*"],
+    "projects": [
+      "packages/*",
+      "packages/board/*",
+      "packages/shared/*",
+      "packages/workflow/*"
+    ],
     "projectsRelationship": "independent",
     "version": {
       "preVersionCommand": "npx nx run-many -t build",
