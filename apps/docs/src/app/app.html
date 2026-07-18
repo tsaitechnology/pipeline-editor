@@ -9,35 +9,28 @@
         Pipeline Editor
       </a>
       <nav class="hidden items-center gap-1 xl:flex" aria-label="Docs">
+        @for (section of contentSections.slice(0, 4); track section.id) {
         <a
           class="rounded-sm px-2.5 py-1.5 text-sm text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
-          href="#install"
-          (click)="go('install')"
+          [href]="sectionHref(section)"
+          (click)="go(section.id)"
         >
-          Install
+          {{ section.label }}
         </a>
-        <a
-          class="rounded-sm px-2.5 py-1.5 text-sm text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
-          href="#catalog"
-          (click)="go('catalog')"
-        >
-          Customize
-        </a>
-        <a
-          class="rounded-sm px-2.5 py-1.5 text-sm text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
-          href="#backend"
-          (click)="go('backend')"
-        >
-          Runtime
-        </a>
-        <a
-          class="rounded-sm px-2.5 py-1.5 text-sm text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
-          href="#reference"
-          (click)="go('reference')"
-        >
-          Reference
-        </a>
+        }
       </nav>
+      <a
+        class="rounded-sm border border-border bg-surface-2 px-2.5 py-1.5 text-sm text-text transition-colors hover:bg-surface-3 sm:px-3"
+        href="llms.txt"
+      >
+        Agent index
+      </a>
+      <a
+        class="rounded-sm border border-border bg-surface-2 px-2.5 py-1.5 text-sm text-text transition-colors hover:bg-surface-3 sm:px-3"
+        href="static/"
+      >
+        Static docs
+      </a>
       <a
         class="rounded-sm border border-border bg-surface-2 px-2.5 py-1.5 text-sm text-text transition-colors hover:bg-surface-3 sm:px-3"
         href="../board"
@@ -47,7 +40,9 @@
       <tsai-button
         variant="ghost"
         size="sm"
-        [attr.aria-label]="isLight() ? 'Switch to dark theme' : 'Switch to light theme'"
+        [attr.aria-label]="
+          isLight() ? 'Switch to dark theme' : 'Switch to light theme'
+        "
         (click)="toggleTheme()"
       >
         <lucide-icon
@@ -75,15 +70,23 @@
         <h1
           class="max-w-3xl text-3xl font-semibold leading-tight sm:text-5xl xl:text-6xl"
         >
-          Visual pipeline editor for product-grade workflow builders.
+          {{ startSection.title }}
         </h1>
-        <p class="max-w-2xl text-base leading-7 text-text-2 sm:text-lg">
-          Publishable Angular components for building n8n-style editors inside
-          your own app: canvas, nodes, parameter inspector, validation, run
-          telemetry, persistence and a backend-neutral execution port.
-        </p>
+        @for (token of startSection.tokens; track $index) { @if (token.type ===
+        'paragraph') {
+        <p
+          class="max-w-2xl text-base leading-7 text-text-2 sm:text-lg"
+          [innerHTML]="token.text | docInline"
+        ></p>
+        } }
       </div>
       <div class="flex flex-wrap gap-3">
+        <a
+          class="inline-flex h-9 items-center rounded-sm border border-border bg-surface-2 px-4 text-sm font-medium text-text transition-colors hover:bg-surface-3"
+          href="llms.txt"
+        >
+          Read agent index
+        </a>
         <a
           class="inline-flex h-9 items-center rounded-sm bg-accent px-4 text-sm font-medium text-accent-fg transition-colors hover:bg-accent-hover"
           href="#install"
@@ -100,15 +103,10 @@
       </div>
     </div>
 
-    <div
-      class="h-[360px] min-h-0 overflow-hidden rounded-lg border border-border bg-canvas shadow-elev-2 sm:h-[440px] lg:h-[520px]"
-    >
-      <pe-board
-        [pipeline]="pipeline()"
-        [readonly]="true"
-        class="block h-full"
-      />
-    </div>
+    @for (token of startSection.tokens; track $index) { @if (token.type ===
+    'demo' && token.id === 'board-readonly') {
+    <ng-container [ngTemplateOutlet]="boardReadonlyDemo" />
+    } }
   </section>
 
   <div
@@ -116,459 +114,200 @@
   >
     <aside class="hidden lg:block">
       <div class="sticky top-24 flex flex-col gap-1">
-        @for (item of nav; track item.id) {
+        @for (section of sections; track section.id) {
         <button
           type="button"
           class="rounded-sm px-3 py-2 text-left text-sm text-text-2 transition-colors hover:bg-surface-2 hover:text-text"
-          [ngClass]="{ 'bg-surface-2 text-text': active() === item.id }"
-          (click)="go(item.id)"
+          [ngClass]="{ 'bg-surface-2 text-text': active() === section.id }"
+          (click)="go(section.id)"
         >
-          {{ item.label }}
+          {{ section.label }}
         </button>
         }
       </div>
     </aside>
 
     <div class="flex min-w-0 flex-col gap-12 sm:gap-16">
-      <section id="install" class="doc-section">
+      @for (section of contentSections; track section.id) {
+      <section [id]="section.id" class="doc-section">
         <div class="doc-heading">
-          <span>01</span>
-          <h2>Install the public packages</h2>
+          <span>{{ sectionNumber(section) }}</span>
+          <h2>{{ section.title }}</h2>
         </div>
-        <p class="doc-copy">
-          The main editor is `@tsai-pe/board`. Add the UI kit, design tokens,
-          data contracts and node registry because host applications provide
-          their own catalog, store and backend implementation.
-        </p>
-        <app-code-block [code]="installSnippet" language="bash" />
-        <app-code-block [code]="stylesSnippet" language="css" />
-        <tsai-table [columns]="packageColumns" [rows]="packages" />
-      </section>
 
-      <section id="board" class="doc-section">
-        <div class="doc-heading">
-          <span>02</span>
-          <h2>Mount the editor</h2>
+        @for (token of section.tokens; track $index) { @switch (token.type) {
+        @case ('paragraph') {
+        <p class="doc-copy" [innerHTML]="token.text | docInline"></p>
+        } @case ('heading') {
+        <h3 class="text-base font-semibold text-text">{{ token.text }}</h3>
+        } @case ('code') {
+        <app-code-block [code]="token.code" [language]="token.language" />
+        } @case ('table') {
+        <div class="overflow-hidden rounded-[var(--r-md)] border border-border">
+          <table class="w-full border-collapse text-sm">
+            <thead class="bg-surface-2 text-left text-text-2">
+              <tr>
+                @for (column of tableColumns(token); track column.index) {
+                <th class="border-b border-border px-3 py-2 font-medium">
+                  {{ column.column }}
+                </th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of token.rows; track $index) {
+              <tr class="border-b border-border last:border-b-0">
+                @for (cell of row; track $index) {
+                <td
+                  class="px-3 py-2 align-top text-text-2"
+                  [innerHTML]="cell | docInline"
+                ></td>
+                }
+              </tr>
+              }
+            </tbody>
+          </table>
         </div>
-        <p class="doc-copy">
-          `pe-board` receives a serializable `Pipeline`. Runtime capabilities
-          are injected: catalog for palette/forms/ports, store for save/open and
-          backend for run/observe/stop. Omit store or backend to hide those
-          controls in read-only or design-only contexts.
-        </p>
-        <app-code-block [code]="boardSnippet" language="typescript" />
-        <tsai-alert variant="info" title="Inputs and tokens">
-          Pass `[pipeline]` to load a document and `[readonly]="true"` to
-          disable editing. Provide `PIPELINE_NODE_CATALOG`, `PIPELINE_STORE` and
-          `PIPELINE_BACKEND` at the host component or route level.
+        } @case ('list') {
+        <ul class="list-disc space-y-1 pl-5 text-sm leading-6 text-text-2">
+          @for (item of token.items; track item) {
+          <li [innerHTML]="item | docInline"></li>
+          }
+        </ul>
+        } @case ('callout') {
+        <tsai-alert [variant]="token.variant" [title]="token.title">
+          <span [innerHTML]="token.text | docInline"></span>
         </tsai-alert>
+        } @case ('demo') { @switch (token.id) { @case ('pipeline-ui-kit') {
+        <ng-container [ngTemplateOutlet]="pipelineUiKitDemo" />
+        } @case ('backend-controls') {
+        <ng-container [ngTemplateOutlet]="backendControlsDemo" />
+        } @case ('expression-tags') {
+        <ng-container [ngTemplateOutlet]="expressionTagsDemo" />
+        } @case ('ui-kit-controls') {
+        <ng-container [ngTemplateOutlet]="uiKitControlsDemo" />
+        } } } } }
       </section>
-
-      <section id="pipeline-ui-kit" class="doc-section">
-        <div class="doc-heading">
-          <span>03</span>
-          <h2>Compose your own pipeline UI</h2>
-        </div>
-        <p class="doc-copy">
-          Use `@tsai-pe/pipeline-ui-kit` when the host application wants the
-          canvas primitives but owns the modal, drawer, routing, save controls
-          or node-add workflow. The primitives render data and emit intents;
-          `BoardStore` and your app decide what those intents mean.
-        </p>
-
-        <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div
-            class="overflow-hidden rounded-[var(--r-md)] border border-border bg-surface-1"
-          >
-            <div
-              class="flex items-center justify-between gap-3 border-b border-border px-3 py-2"
-            >
-              <div>
-                <h3 class="text-sm font-semibold text-text">
-                  Primitive board surface
-                </h3>
-                <p class="text-xs text-text-3">
-                  Toggle node status and select nodes without using `pe-board`.
-                </p>
-              </div>
-              <tsai-button
-                size="sm"
-                variant="secondary"
-                (click)="cycleKitStatus()"
-              >
-                {{ kitStatus() }}
-              </tsai-button>
-            </div>
-
-            <div class="h-[320px]">
-              <pe-board-surface
-                [pan]="kitStore.viewport.pan()"
-                [zoom]="kitStore.viewport.zoom()"
-              >
-                <ng-container pe-board-world>
-                  <pe-pipeline-edge-layer [edges]="kitStore.edgeGeometries()" />
-                  @for (node of kitStore.nodes(); track node.id) {
-                  <pe-pipeline-node
-                    [node]="node"
-                    [selected]="kitSelectedId() === node.id"
-                    [runStatus]="kitStatus()"
-                    (bodyPointerDown)="selectKitNode(node.id)"
-                    (openRequested)="selectKitNode(node.id)"
-                  />
-                  }
-                </ng-container>
-              </pe-board-surface>
-            </div>
-          </div>
-
-          <div
-            class="rounded-[var(--r-md)] border border-border bg-surface-1 p-4"
-          >
-            @if (kitSelectedNode(); as node) {
-            <div class="mb-4">
-              <h3 class="text-sm font-semibold text-text">Inspector content</h3>
-              <p class="text-xs text-text-3">
-                This panel could be your modal, drawer or routed page.
-              </p>
-            </div>
-            <pe-node-inspector
-              [node]="node"
-              [catalog]="nodeCatalog"
-              (nodeChange)="updateKitNode($event)"
-            />
-            }
-          </div>
-        </div>
-
-        <app-code-block [code]="pipelineUiKitSnippet" language="typescript" />
-      </section>
-
-      <section id="concepts" class="doc-section">
-        <div class="doc-heading">
-          <span>03</span>
-          <h2>Understand the integration model</h2>
-        </div>
-        <p class="doc-copy">
-          Pipeline Editor is not a hosted automation service. It is a UI kit for
-          product teams that want to embed a workflow builder while keeping
-          execution, credentials, permissions and persistence in their own
-          system.
-        </p>
-        <tsai-table [columns]="conceptColumns" [rows]="concepts" />
-        <tsai-table [columns]="lifecycleColumns" [rows]="lifecycle" />
-      </section>
-
-      <section id="model" class="doc-section">
-        <div class="doc-heading">
-          <span>04</span>
-          <h2>Store pipelines as plain data</h2>
-        </div>
-        <p class="doc-copy">
-          A pipeline is a serializable graph: nodes, edges and domain-specific
-          `data`. Keep IDs stable, store snapshots as JSON and run exactly the
-          graph the user saved or submitted.
-        </p>
-        <app-code-block [code]="pipelineSnippet" language="typescript" />
-      </section>
-
-      <section id="catalog" class="doc-section">
-        <div class="doc-heading">
-          <span>05</span>
-          <h2>Describe your node catalog</h2>
-        </div>
-        <p class="doc-copy">
-          The editor does not hard-code integrations. Each node type declares
-          its params, ports and output example. Those fields drive palette
-          groups, inspector forms, dynamic switch outputs and expression help.
-        </p>
-        <app-code-block [code]="catalogSnippet" language="typescript" />
-        <app-code-block [code]="nodeSpecSnippet" language="typescript" />
-        <div class="grid gap-4 md:grid-cols-3">
-          <tsai-card>
-            <h3 class="mb-2 text-sm font-semibold text-text">Params</h3>
-            <p class="text-sm leading-6 text-text-2">
-              Use `text`, `number`, `select`, `expression`, `json`, `array`,
-              `secret`, `credential`, `code` and resource picker fields.
-            </p>
-          </tsai-card>
-          <tsai-card>
-            <h3 class="mb-2 text-sm font-semibold text-text">Ports</h3>
-            <p class="text-sm leading-6 text-text-2">
-              Static, conditional and dynamic ports let nodes model branches,
-              switch cases, split/merge flows and effect-only leaves.
-            </p>
-          </tsai-card>
-          <tsai-card>
-            <h3 class="mb-2 text-sm font-semibold text-text">Context</h3>
-            <p class="text-sm leading-6 text-text-2">
-              `outputExample` powers `$json`, `$trigger` and `$node["Title"]`
-              suggestions in expression-capable inputs.
-            </p>
-          </tsai-card>
-        </div>
-      </section>
-
-      <section id="params" class="doc-section">
-        <div class="doc-heading">
-          <span>06</span>
-          <h2>Build inspector forms from params</h2>
-        </div>
-        <p class="doc-copy">
-          `ParamField` is the schema for the right-side inspector. Use sections
-          to group advanced settings, `visibleWhen` to keep forms short and
-          object/array fields for structured configuration without writing a
-          custom inspector.
-        </p>
-        <app-code-block [code]="paramSnippet" language="typescript" />
-        <tsai-table [columns]="paramColumns" [rows]="params" />
-      </section>
-
-      <section id="ports" class="doc-section">
-        <div class="doc-heading">
-          <span>07</span>
-          <h2>Model custom ports and routing</h2>
-        </div>
-        <p class="doc-copy">
-          Nodes can expose fixed ports, generate outputs from user-entered array
-          data and reveal conditional outputs when a setting is enabled. This is
-          enough for if/switch nodes, fan-out, split/merge workflows, optional
-          fallbacks and product-specific routing rules.
-        </p>
-        <app-code-block [code]="portSnippet" language="typescript" />
-        <div class="grid gap-4 md:grid-cols-3">
-          <tsai-card>
-            <h3 class="mb-2 text-sm font-semibold text-text">Static</h3>
-            <p class="text-sm leading-6 text-text-2">
-              Use explicit `in`, `out`, `true`, `false` or domain-specific port
-              ids when the shape of the node is known in advance.
-            </p>
-          </tsai-card>
-          <tsai-card>
-            <h3 class="mb-2 text-sm font-semibold text-text">Dynamic</h3>
-            <p class="text-sm leading-6 text-text-2">
-              Generate one output per item in an array field, such as route
-              cases, departments, locales or model candidates.
-            </p>
-          </tsai-card>
-          <tsai-card>
-            <h3 class="mb-2 text-sm font-semibold text-text">Conditional</h3>
-            <p class="text-sm leading-6 text-text-2">
-              Reveal ports only when config requires them, keeping simple nodes
-              compact while still supporting advanced branches.
-            </p>
-          </tsai-card>
-        </div>
-      </section>
-
-      <section id="styling" class="doc-section">
-        <div class="doc-heading">
-          <span>08</span>
-          <h2>Theme and style the editor</h2>
-        </div>
-        <p class="doc-copy">
-          Styling is token-driven. Import `@tsai-pe/theme`, scan the shipped
-          Tailwind classes and override CSS variables in your product shell.
-          Board, nodes, forms and UI kit controls read the same tokens.
-        </p>
-        <app-code-block [code]="stylingSnippet" language="css" />
-        <tsai-alert variant="info" title="Dark and light">
-          Dark is the default. Add `.light` to the document root or an app shell
-          to switch token values without replacing components.
-        </tsai-alert>
-        <tsai-table [columns]="tokenColumns" [rows]="tokens" />
-      </section>
-
-      <section id="expressions" class="doc-section">
-        <div class="doc-heading">
-          <span>09</span>
-          <h2>Expose expressions and variables</h2>
-        </div>
-        <p class="doc-copy">
-          Expression fields can be used inside your own inspectors and side
-          panels. Provide a scope from trigger payloads, current `$json` data
-          and upstream node outputs so users get autocomplete for valid
-          references.
-        </p>
-        <app-code-block [code]="expressionSnippet" language="typescript" />
-        <div class="flex flex-wrap gap-2">
-          <tsai-tag variant="accent">$json.customer.email</tsai-tag>
-          <tsai-tag>$trigger.body.email</tsai-tag>
-          <tsai-tag>$node["Score Lead"].segment</tsai-tag>
-        </div>
-      </section>
-
-      <section id="backend" class="doc-section">
-        <div class="doc-heading">
-          <span>10</span>
-          <h2>Connect execution and persistence</h2>
-        </div>
-        <p class="doc-copy">
-          The frontend edits graphs and observes runs. Your system owns actual
-          semantics: queueing, credentials, retries, logs and side effects. The
-          `PipelineBackend` contract is intentionally small so it can wrap REST,
-          WebSocket, SSE or local prototypes.
-        </p>
-        <div
-          class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,320px)]"
-        >
-          <app-code-block [code]="backendSnippet" language="typescript" />
-          <tsai-card>
-            <div class="flex flex-col gap-4">
-              <tsai-select
-                [options]="backendOptions"
-                [value]="backendMode()"
-                (valueChange)="backendMode.set($event)"
-              />
-              <tsai-input
-                [value]="search()"
-                (valueChange)="search.set($event)"
-                [clearable]="true"
-                placeholder="Expression path"
-              />
-              <div class="flex flex-wrap gap-2">
-                <tsai-tag variant="accent">{{ search() }}</tsai-tag>
-                <tsai-tag>$json</tsai-tag>
-                <tsai-tag>$trigger</tsai-tag>
-                <tsai-tag>$node</tsai-tag>
-              </div>
-            </div>
-          </tsai-card>
-        </div>
-        <app-code-block [code]="storeSnippet" language="typescript" />
-        <app-code-block [code]="eventSnippet" language="typescript" />
-        <app-code-block [code]="snapshotSnippet" language="typescript" />
-      </section>
-
-      <section id="security" class="doc-section">
-        <div class="doc-heading">
-          <span>11</span>
-          <h2>Keep credentials and permissions server-owned</h2>
-        </div>
-        <p class="doc-copy">
-          The editor can render credential selectors, but secret material should
-          never be serialized into `Pipeline.data`. Store references in the
-          pipeline and resolve them inside the backend runtime with the current
-          user's permissions.
-        </p>
-        <app-code-block [code]="credentialSnippet" language="typescript" />
-        <tsai-alert variant="warning" title="Trust boundary">
-          Treat every submitted pipeline as user input. Revalidate graph shape,
-          node permissions, credential access and expression safety before
-          starting a run.
-        </tsai-alert>
-      </section>
-
-      <section id="recipes" class="doc-section">
-        <div class="doc-heading">
-          <span>12</span>
-          <h2>Start from product recipes</h2>
-        </div>
-        <p class="doc-copy">
-          Good host apps usually ship a small catalog of domain recipes instead
-          of exposing generic building blocks first. Model the common flows your
-          users already understand, then let advanced users compose lower-level
-          transform, routing and effect nodes.
-        </p>
-        <app-code-block [code]="recipeSnippet" language="typescript" />
-        <div class="grid gap-4 md:grid-cols-2">
-          <tsai-card>
-            <h3 class="mb-2 text-sm font-semibold text-text">Customer ops</h3>
-            <p class="text-sm leading-6 text-text-2">
-              Webhook trigger, enrichment, LLM classifier, CRM update, Slack or
-              email notification.
-            </p>
-          </tsai-card>
-          <tsai-card>
-            <h3 class="mb-2 text-sm font-semibold text-text">AI agents</h3>
-            <p class="text-sm leading-6 text-text-2">
-              Prompt, tool call, branch on confidence, human approval, memory
-              write and final response.
-            </p>
-          </tsai-card>
-          <tsai-card>
-            <h3 class="mb-2 text-sm font-semibold text-text">Data pipelines</h3>
-            <p class="text-sm leading-6 text-text-2">
-              Fetch, normalize, split rows, transform each item, merge results
-              and write to a warehouse.
-            </p>
-          </tsai-card>
-          <tsai-card>
-            <h3 class="mb-2 text-sm font-semibold text-text">Approval flows</h3>
-            <p class="text-sm leading-6 text-text-2">
-              Trigger, policy check, conditional route, reviewer task, timeout
-              fallback and final effect.
-            </p>
-          </tsai-card>
-        </div>
-      </section>
-
-      <section id="reference" class="doc-section">
-        <div class="doc-heading">
-          <span>13</span>
-          <h2>Know the main extension points</h2>
-        </div>
-        <p class="doc-copy">
-          The public surface is intentionally small. Most custom behavior comes
-          from catalog metadata, injected backend/store adapters and shared
-          tokens, not from subclassing visual components.
-        </p>
-        <tsai-table [columns]="apiColumns" [rows]="apis" />
-      </section>
-
-      <section id="ui-kit" class="doc-section">
-        <div class="doc-heading">
-          <span>14</span>
-          <h2>Use the UI kit around the editor</h2>
-        </div>
-        <p class="doc-copy">
-          The package includes the same controls used by the board: buttons,
-          fields, selects, menus, dialogs, tabs, alerts, badges, tables and
-          layout primitives. They share the same tokens as the canvas.
-        </p>
-        <tsai-table [columns]="componentColumns" [rows]="components" />
-        <div class="grid gap-4 md:grid-cols-2">
-          <tsai-card>
-            <div class="flex flex-wrap items-center gap-2">
-              <tsai-button>Primary action</tsai-button>
-              <tsai-button variant="secondary">Secondary</tsai-button>
-              <tsai-button variant="ghost">Ghost</tsai-button>
-            </div>
-          </tsai-card>
-          <tsai-card>
-            <div class="flex flex-wrap items-center gap-2">
-              <tsai-badge variant="success">success</tsai-badge>
-              <tsai-badge variant="warning">warning</tsai-badge>
-              <tsai-tag [removable]="true">removable</tsai-tag>
-            </div>
-          </tsai-card>
-        </div>
-      </section>
-
-      <section id="troubleshooting" class="doc-section">
-        <div class="doc-heading">
-          <span>15</span>
-          <h2>Troubleshoot integration issues</h2>
-        </div>
-        <p class="doc-copy">
-          Most integration failures are host-app wiring problems: missing
-          height, missing Tailwind source scanning or intentionally omitted
-          injection tokens.
-        </p>
-        <tsai-table [columns]="issueColumns" [rows]="issues" />
-      </section>
-
-      <section id="production" class="doc-section">
-        <div class="doc-heading">
-          <span>16</span>
-          <h2>Ship with a production checklist</h2>
-        </div>
-        <p class="doc-copy">
-          A strong integration is not just a working canvas. Treat catalogs,
-          migrations, runtime isolation, permissions and observability as part
-          of the product contract.
-        </p>
-        <tsai-table [columns]="productionColumns" [rows]="production" />
-      </section>
+      }
     </div>
   </div>
 </main>
+
+<ng-template #boardReadonlyDemo>
+  <div
+    class="h-[360px] min-h-0 overflow-hidden rounded-lg border border-border bg-canvas shadow-elev-2 sm:h-[440px] lg:h-[520px]"
+  >
+    <pe-board [pipeline]="pipeline()" [readonly]="true" class="block h-full" />
+  </div>
+</ng-template>
+
+<ng-template #pipelineUiKitDemo>
+  <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+    <div
+      class="overflow-hidden rounded-[var(--r-md)] border border-border bg-surface-1"
+    >
+      <div
+        class="flex items-center justify-between gap-3 border-b border-border px-3 py-2"
+      >
+        <div>
+          <h3 class="text-sm font-semibold text-text">
+            Primitive board surface
+          </h3>
+          <p class="text-xs text-text-3">
+            Toggle node status and select nodes without using `pe-board`.
+          </p>
+        </div>
+        <tsai-button size="sm" variant="secondary" (click)="cycleKitStatus()">
+          {{ kitStatus() }}
+        </tsai-button>
+      </div>
+
+      <div class="h-[320px]">
+        <pe-board-surface
+          [pan]="kitStore.viewport.pan()"
+          [zoom]="kitStore.viewport.zoom()"
+        >
+          <ng-container pe-board-world>
+            <pe-pipeline-edge-layer [edges]="kitStore.edgeGeometries()" />
+            @for (node of kitStore.nodes(); track node.id) {
+            <pe-pipeline-node
+              [node]="node"
+              [selected]="kitSelectedId() === node.id"
+              [runStatus]="kitStatus()"
+              (bodyPointerDown)="selectKitNode(node.id)"
+              (openRequested)="selectKitNode(node.id)"
+            />
+            }
+          </ng-container>
+        </pe-board-surface>
+      </div>
+    </div>
+
+    <div class="rounded-[var(--r-md)] border border-border bg-surface-1 p-4">
+      @if (kitSelectedNode(); as node) {
+      <div class="mb-4">
+        <h3 class="text-sm font-semibold text-text">Inspector content</h3>
+        <p class="text-xs text-text-3">
+          This panel could be your modal, drawer or routed page.
+        </p>
+      </div>
+      <pe-node-inspector
+        [node]="node"
+        [catalog]="nodeCatalog"
+        (nodeChange)="updateKitNode($event)"
+      />
+      }
+    </div>
+  </div>
+</ng-template>
+
+<ng-template #backendControlsDemo>
+  <tsai-card>
+    <div class="flex max-w-sm flex-col gap-4">
+      <tsai-select
+        [options]="backendOptions"
+        [value]="backendMode()"
+        (valueChange)="backendMode.set($event)"
+      />
+      <tsai-input
+        [value]="search()"
+        (valueChange)="search.set($event)"
+        [clearable]="true"
+        placeholder="Expression path"
+      />
+      <div class="flex flex-wrap gap-2">
+        <tsai-tag variant="accent">{{ search() }}</tsai-tag>
+        <tsai-tag>$json</tsai-tag>
+        <tsai-tag>$trigger</tsai-tag>
+        <tsai-tag>$node</tsai-tag>
+      </div>
+    </div>
+  </tsai-card>
+</ng-template>
+
+<ng-template #expressionTagsDemo>
+  <div class="flex flex-wrap gap-2">
+    <tsai-tag variant="accent">$json.customer.email</tsai-tag>
+    <tsai-tag>$trigger.body.email</tsai-tag>
+    <tsai-tag>$node["Score Lead"].segment</tsai-tag>
+  </div>
+</ng-template>
+
+<ng-template #uiKitControlsDemo>
+  <div class="grid gap-4 md:grid-cols-2">
+    <tsai-card>
+      <div class="flex flex-wrap items-center gap-2">
+        <tsai-button>Primary action</tsai-button>
+        <tsai-button variant="secondary">Secondary</tsai-button>
+        <tsai-button variant="ghost">Ghost</tsai-button>
+      </div>
+    </tsai-card>
+    <tsai-card>
+      <div class="flex flex-wrap items-center gap-2">
+        <tsai-badge variant="success">success</tsai-badge>
+        <tsai-badge variant="warning">warning</tsai-badge>
+        <tsai-tag [removable]="true">removable</tsai-tag>
+      </div>
+    </tsai-card>
+  </div>
+</ng-template>

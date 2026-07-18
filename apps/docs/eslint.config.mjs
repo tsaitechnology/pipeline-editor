@@ -2,6 +2,18 @@ import nx from '@nx/eslint-plugin';
 import baseConfig from '../../eslint.config.mjs';
 
 export default [
+  {
+    ignores: [
+      'apps/docs/public/content/**',
+      'apps/docs/public/static/**',
+      'apps/docs/public/llms.txt',
+      'apps/docs/src/app/generated-docs.ts',
+      'public/content/**',
+      'public/static/**',
+      'public/llms.txt',
+      'src/app/generated-docs.ts',
+    ],
+  },
   ...nx.configs['flat/angular'],
   ...nx.configs['flat/angular-template'],
   ...baseConfig,

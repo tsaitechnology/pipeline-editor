@@ -6,6 +6,11 @@
 **[Documentation](https://tsai-tech.github.io/pipeline-editor/docs/)** — build a
 pipeline, wire it up, and learn how to embed the components in your app.
 
+The documentation source of truth is [`docs/content`](./docs/content). The docs
+build renders those Markdown files into the human docs site and publishes the
+same files, an `llms.txt` index and prerendered `/static/*.html` pages as
+generated assets for agents.
+
 A canvas where a pipeline is assembled from nodes (**trigger → action → effect**,
 plus if/switch/filter control-flow and split/merge buffers): nodes connect with
 edges, drag around, and the canvas pans and zooms. It has a parameter inspector,

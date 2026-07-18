@@ -35,6 +35,25 @@
   line-height: 1.7;
 }
 
+.doc-copy code,
+td code,
+li code,
+tsai-alert code {
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--surface-2);
+  padding: 0.08rem 0.28rem;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+
+.doc-link {
+  color: var(--accent-hover);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 @media (max-width: 640px) {
   .doc-section {
     scroll-margin-top: 84px;

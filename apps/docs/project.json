@@ -9,6 +9,7 @@
     "build": {
       "executor": "@angular/build:application",
       "outputs": ["{options.outputPath}"],
+      "dependsOn": ["generate-docs", "^build"],
       "defaultConfiguration": "production",
       "options": {
         "outputPath": "dist/apps/docs",
@@ -45,8 +46,21 @@
         }
       }
     },
+    "generate-docs": {
+      "executor": "nx:run-commands",
+      "outputs": [
+        "{projectRoot}/src/app/generated-docs.ts",
+        "{projectRoot}/public/content",
+        "{projectRoot}/public/llms.txt",
+        "{projectRoot}/public/static"
+      ],
+      "options": {
+        "command": "node tools/generate-docs-content.mjs"
+      }
+    },
     "serve": {
       "continuous": true,
+      "dependsOn": ["generate-docs"],
       "executor": "@angular/build:dev-server",
       "defaultConfiguration": "development",
       "configurations": {
@@ -59,7 +73,16 @@
       }
     },
     "lint": {
-      "executor": "@nx/eslint:lint"
+      "executor": "@nx/eslint:lint",
+      "dependsOn": ["generate-docs"]
+    },
+    "typecheck": {
+      "dependsOn": ["generate-docs"],
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/docs",
+        "command": "tsc --noEmit -p tsconfig.app.json"
+      }
     },
     "serve-static": {
       "continuous": true,
