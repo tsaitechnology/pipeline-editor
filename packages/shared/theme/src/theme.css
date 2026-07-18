@@ -61,7 +61,7 @@
 
   /* ── Board / canvas ──────────────────────────────────────────────────── */
   --canvas-bg: #08080a; /* the "well" behind nodes */
-  --canvas-grid-dot: rgba(255, 255, 255, 0.06); /* 32×32 dot grid */
+  --canvas-grid-dot: rgba(255, 255, 255, 0.16); /* 32×32 dot grid */
   --canvas-grid-size: 32px;
   --edge: rgba(255, 255, 255, 0.24); /* connection stroke, resting */
   --edge-hover: rgba(255, 255, 255, 0.45);
@@ -133,7 +133,7 @@
   --text-disabled: rgba(0, 0, 0, 0.26);
 
   --canvas-bg: #fbfbfc;
-  --canvas-grid-dot: rgba(0, 0, 0, 0.08);
+  --canvas-grid-dot: rgba(0, 0, 0, 0.14);
   --edge: rgba(0, 0, 0, 0.28);
   --edge-hover: rgba(0, 0, 0, 0.5);
   --port: #ffffff;

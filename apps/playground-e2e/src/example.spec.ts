@@ -3,7 +3,13 @@ import type { Page } from '@playwright/test';
 
 async function expectBoardGridAndEdges(page: Page) {
   const renderState = await page.evaluate(() => {
+    const alphaFromBackground = (background: string) => {
+      const rgba = /rgba\([^,]+,[^,]+,[^,]+,\s*([0-9.]+)\)/.exec(background);
+      if (rgba) return Number(rgba[1]);
+      return background.includes('rgb(') ? 1 : 0;
+    };
     const grid = document.querySelector('pe-board-grid div');
+    const gridBackground = grid ? getComputedStyle(grid).backgroundImage : '';
     const edgeGroups = [
       ...document.querySelectorAll(
         'pe-pipeline-edge-layer svg g[pe-pipeline-edge]',
@@ -17,7 +23,8 @@ async function expectBoardGridAndEdges(page: Page) {
     });
 
     return {
-      gridBackground: grid ? getComputedStyle(grid).backgroundImage : '',
+      gridBackground,
+      gridDotAlpha: alphaFromBackground(gridBackground),
       customEdgeHosts: document.querySelectorAll('pe-pipeline-edge').length,
       edgeGroupCount: edgeGroups.length,
       edgeGroupsInSvgNamespace: edgeGroups.every(
@@ -28,6 +35,7 @@ async function expectBoardGridAndEdges(page: Page) {
   });
 
   expect(renderState.gridBackground).toContain('radial-gradient');
+  expect(renderState.gridDotAlpha).toBeGreaterThanOrEqual(0.12);
   expect(renderState.customEdgeHosts).toBe(0);
   expect(renderState.edgeGroupCount).toBeGreaterThan(0);
   expect(renderState.edgeGroupsInSvgNamespace).toBe(true);
