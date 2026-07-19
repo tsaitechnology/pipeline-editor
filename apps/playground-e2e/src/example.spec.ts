@@ -9,7 +9,8 @@ async function expectBoardGridAndEdges(page: Page) {
       return background.includes('rgb(') ? 1 : 0;
     };
     const grid = document.querySelector('pe-board-grid div');
-    const gridBackground = grid ? getComputedStyle(grid).backgroundImage : '';
+    const gridStyle = grid ? getComputedStyle(grid) : null;
+    const gridBackground = gridStyle?.backgroundImage ?? '';
     const edgeGroups = [
       ...document.querySelectorAll(
         'pe-pipeline-edge-layer svg g[pe-pipeline-edge]',
@@ -24,6 +25,7 @@ async function expectBoardGridAndEdges(page: Page) {
 
     return {
       gridBackground,
+      gridBackgroundSize: gridStyle?.backgroundSize ?? '',
       gridDotAlpha: alphaFromBackground(gridBackground),
       customEdgeHosts: document.querySelectorAll('pe-pipeline-edge').length,
       edgeGroupCount: edgeGroups.length,
@@ -35,6 +37,9 @@ async function expectBoardGridAndEdges(page: Page) {
   });
 
   expect(renderState.gridBackground).toContain('radial-gradient');
+  expect(renderState.gridBackgroundSize).toMatch(
+    /\d+(?:\.\d+)?px \d+(?:\.\d+)?px/,
+  );
   expect(renderState.gridDotAlpha).toBeGreaterThanOrEqual(0.12);
   expect(renderState.customEdgeHosts).toBe(0);
   expect(renderState.edgeGroupCount).toBeGreaterThan(0);

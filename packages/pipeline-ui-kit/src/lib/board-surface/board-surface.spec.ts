@@ -27,7 +27,7 @@ describe('BoardSurface', () => {
     ) as HTMLElement;
     expect(grid.classList).toContain('pe-board-grid-dots');
     expect(grid.classList).not.toContain('opacity-80');
-    expect(grid.style.backgroundSize).toBe('64px');
+    expect(grid.style.backgroundSize).toBe('64px 64px');
     expect(grid.style.backgroundPosition).toBe('12px 18px');
   });
 

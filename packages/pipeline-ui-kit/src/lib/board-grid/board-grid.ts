@@ -34,7 +34,10 @@ export class BoardGrid {
   readonly pan = input<Point>({ x: 0, y: 0 });
   readonly zoom = input(1);
 
-  protected readonly cell = computed(() => `${GRID_CELL * this.zoom()}px`);
+  protected readonly cell = computed(() => {
+    const size = `${GRID_CELL * this.zoom()}px`;
+    return `${size} ${size}`;
+  });
   protected readonly position = computed(() => {
     const { x, y } = this.pan();
     return `${x}px ${y}px`;
