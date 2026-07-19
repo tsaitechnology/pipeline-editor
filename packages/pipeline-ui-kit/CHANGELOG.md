@@ -1,3 +1,20 @@
+## 0.1.4 (2026-07-19)
+
+### 🩹 Fixes
+
+- **board:** restore subtle grid contrast ([fea4834](https://github.com/tsaitechnology/pipeline-editor/commit/fea4834))
+
+### 🧱 Updated Dependencies
+
+- Updated ui-kit to 0.1.4
+- Updated core to 0.1.4
+- Updated models to 0.1.4
+- Updated nodes to 0.1.4
+
+### ❤️ Thank You
+
+- Mikhail Tsai @find
+
 ## 0.1.3 (2026-07-19)
 
 ### 🩹 Fixes

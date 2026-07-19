@@ -1,15 +1,15 @@
 {
   "name": "@tsai-pe/board",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "peerDependencies": {
     "@angular/cdk": "^21.2.0",
     "@angular/core": "^21.2.0",
-    "@tsai-pe/board-core": "0.1.3",
-    "@tsai-pe/models": "0.1.3",
-    "@tsai-pe/pipeline-ui-kit": "0.1.3",
+    "@tsai-pe/board-core": "0.1.4",
+    "@tsai-pe/models": "0.1.4",
+    "@tsai-pe/pipeline-ui-kit": "0.1.4",
     "lucide-angular": "^1.0.0",
-    "@tsai-pe/nodes": "0.1.3",
-    "@tsai-pe/ui-kit": "0.1.3"
+    "@tsai-pe/nodes": "0.1.4",
+    "@tsai-pe/ui-kit": "0.1.4"
   },
   "sideEffects": false,
   "description": "Pipeline Editor — the <pe-board> visual pipeline editor (main package).",

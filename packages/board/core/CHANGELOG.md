@@ -1,3 +1,10 @@
+## 0.1.4 (2026-07-19)
+
+### 🧱 Updated Dependencies
+
+- Updated models to 0.1.4
+- Updated nodes to 0.1.4
+
 ## 0.1.3 (2026-07-19)
 
 ### 🧱 Updated Dependencies

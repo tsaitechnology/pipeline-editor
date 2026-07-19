@@ -1,3 +1,13 @@
+## 0.1.4 (2026-07-19)
+
+### 🩹 Fixes
+
+- **board:** restore subtle grid contrast ([fea4834](https://github.com/tsaitechnology/pipeline-editor/commit/fea4834))
+
+### ❤️ Thank You
+
+- Mikhail Tsai @find
+
 ## 0.1.3 (2026-07-19)
 
 ### 🩹 Fixes

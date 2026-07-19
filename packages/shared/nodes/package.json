@@ -1,12 +1,12 @@
 {
   "name": "@tsai-pe/nodes",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "commonjs",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
   "dependencies": {
     "tslib": "^2.3.0",
-    "@tsai-pe/models": "0.1.3"
+    "@tsai-pe/models": "0.1.4"
   },
   "description": "Pipeline Editor — node-type registry: control-flow ports, node catalog and param schemas.",
   "keywords": [

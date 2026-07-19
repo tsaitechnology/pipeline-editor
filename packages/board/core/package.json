@@ -1,15 +1,15 @@
 {
   "name": "@tsai-pe/board-core",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "commonjs",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",
   "peerDependencies": {
     "@angular/core": "^21.2.0",
-    "@tsai-pe/nodes": "0.1.3"
+    "@tsai-pe/nodes": "0.1.4"
   },
   "dependencies": {
-    "@tsai-pe/models": "0.1.3",
+    "@tsai-pe/models": "0.1.4",
     "tslib": "^2.3.0"
   },
   "description": "Pipeline Editor — board state store, geometry and A* edge routing.",
