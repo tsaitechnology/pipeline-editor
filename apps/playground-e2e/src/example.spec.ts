@@ -40,7 +40,7 @@ async function expectBoardGridAndEdges(page: Page) {
   expect(renderState.gridBackgroundSize).toMatch(
     /\d+(?:\.\d+)?px \d+(?:\.\d+)?px/,
   );
-  expect(renderState.gridDotAlpha).toBeGreaterThanOrEqual(0.12);
+  expect(renderState.gridDotAlpha).toBeGreaterThan(0);
   expect(renderState.customEdgeHosts).toBe(0);
   expect(renderState.edgeGroupCount).toBeGreaterThan(0);
   expect(renderState.edgeGroupsInSvgNamespace).toBe(true);

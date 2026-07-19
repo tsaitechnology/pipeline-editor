@@ -14,7 +14,7 @@ import type { Point } from '@tsai-pe/models';
   selector: 'pe-board-grid',
   imports: [],
   template: `<div
-    class="pe-board-grid-dots absolute inset-0"
+    class="pe-board-grid-dots absolute inset-0 opacity-80"
     [style.background-size]="cell()"
     [style.background-position]="position()"
   ></div>`,
@@ -22,8 +22,8 @@ import type { Point } from '@tsai-pe/models';
     .pe-board-grid-dots {
       background-image: radial-gradient(
         circle,
-        var(--canvas-grid-dot, rgba(255, 255, 255, 0.16)) 1.35px,
-        transparent 1.35px
+        var(--canvas-grid-dot, rgba(255, 255, 255, 0.06)) 1px,
+        transparent 1px
       );
     }
   `,
